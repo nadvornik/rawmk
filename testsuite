@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# The test data (100 MB) can be downloaded here:
+# http://vnd.me.cz/rawmk/rawmk-test-data.tar.gz
+
 set -e -x
 export PATH=$PWD/bin:$PATH
 
@@ -26,14 +30,14 @@ echo " 'download' images"
 echo "==================================================================="
 
 # put files to download dir
-cp ../../test_data/sbs_stereo/img_7966.cr2 \
+cp ../../test_data/sbs_stereo/img_7977.cr2 \
    ../../test_data/pano/img_4971.cr2 \
    ../../test_data/pano/img_4972.cr2 \
    ../download
 
 #put stereo files to download dir, names are different for now
-cp ../../test_data/stereo/R/img_1415.cr2 ../R
-cp ../../test_data/stereo/L/img_8008.cr2 ../L
+cp ../../test_data/stereo/R/img_1507.cr2 ../R
+cp ../../test_data/stereo/L/img_8100.cr2 ../L
 
 echo "==================================================================="
 echo " sort images"
@@ -43,13 +47,13 @@ echo "==================================================================="
 rawmk sort
 
 #images are sorted
-test -f 2012-03-24/img_7966.cr2
+test -f 2012-03-24/img_7977.cr2
 test -f 2014-01-28/img_4971.cr2
 test -f 2014-01-28/img_4972.cr2
 
 #stereo L R images are paired
-test -f 2014-01-28/img_1415r.cr2
-test -f 2014-01-28/img_1415l.cr2
+test -f 2014-01-28/img_1507r.cr2
+test -f 2014-01-28/img_1507l.cr2
 
 echo "==================================================================="
 echo " get default result"
@@ -60,29 +64,47 @@ make
 
 
 #check default results
-test -f 2012-03-24/img_7966.jpg
+test -f 2012-03-24/img_7977.jpg
 test -f 2014-01-28/img_4971.jpg
 test -f 2014-01-28/img_4972.jpg
 
-test -f 2014-01-28/img_1415.jps
+test -f 2014-01-28/img_1507.jps
+
+
+echo "==================================================================="
+echo " edit rawtherapee parameters"
+echo "==================================================================="
+
+sed -i -e "s|VerticalFlip=false|VerticalFlip=true|" 2012-03-24/img_7977.cr2.pp3
+touch timestamp
+make
+
+# this output files should be updated
+test 2012-03-24/img_7977.jpg -nt timestamp
+
+# previously created files stay unchanged
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
+
 
 #sbs stereo
 echo "==================================================================="
 echo " create stereo image from 1 SBS source"
 echo "==================================================================="
-rawmk add_sbs 2012-03-24/img_7966.cr2
+rawmk add_sbs 2012-03-24/img_7977.cr2
 touch timestamp
 make
 
 # result exists and is newly created
-test -f 2012-03-24/img_7966.jps
-test 2012-03-24/img_7966.jps -nt timestamp
+test -f 2012-03-24/img_7977.jps
+test 2012-03-24/img_7977.jps -nt timestamp
 
 # previously created files stay unchanged
-test 2012-03-24/img_7966.jpg -ot timestamp
+test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
-test 2014-01-28/img_1415.jps -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
 
 #stereo from 2 images
 echo "==================================================================="
@@ -97,11 +119,11 @@ test -f 2014-01-28/img_4972_img_4971.jps
 test 2014-01-28/img_4972_img_4971.jps -nt timestamp
 
 # previously created files stay unchanged
-test 2012-03-24/img_7966.jps -ot timestamp
-test 2012-03-24/img_7966.jpg -ot timestamp
+test 2012-03-24/img_7977.jps -ot timestamp
+test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
-test 2014-01-28/img_1415.jps -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
 
 
 echo "==================================================================="
@@ -116,11 +138,11 @@ test 2014-01-28/img_4971_img_4972.jps -nt timestamp
 
 # previously created files stay unchanged
 test 2014-01-28/img_4972_img_4971.jps -ot timestamp
-test 2012-03-24/img_7966.jps -ot timestamp
-test 2012-03-24/img_7966.jpg -ot timestamp
+test 2012-03-24/img_7977.jps -ot timestamp
+test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
-test 2014-01-28/img_1415.jps -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
 
 
 #pano
@@ -138,11 +160,11 @@ test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -nt timestamp
 # previously created files stay unchanged
 test 2014-01-28/img_4971_img_4972.jps -ot timestamp
 test 2014-01-28/img_4972_img_4971.jps -ot timestamp 
-test 2012-03-24/img_7966.jps -ot timestamp
-test 2012-03-24/img_7966.jpg -ot timestamp
+test 2012-03-24/img_7977.jps -ot timestamp
+test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
-test 2014-01-28/img_1415.jps -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
 
 echo "==================================================================="
 echo " create pano image - part 2 - tiff output"
@@ -156,11 +178,11 @@ test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif -nt timestamp
 test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -ot timestamp
 test 2014-01-28/img_4971_img_4972.jps -ot timestamp
 test 2014-01-28/img_4972_img_4971.jps -ot timestamp
-test 2012-03-24/img_7966.jps -ot timestamp
-test 2012-03-24/img_7966.jpg -ot timestamp
+test 2012-03-24/img_7977.jps -ot timestamp
+test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
-test 2014-01-28/img_1415.jps -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
 
 echo "==================================================================="
 echo " TEST 2 - the same as test 1, as fast as possible "
@@ -187,14 +209,14 @@ echo " 'download' images"
 echo "==================================================================="
 
 # put files to download dir
-cp ../../test_data/sbs_stereo/img_7966.cr2 \
+cp ../../test_data/sbs_stereo/img_7977.cr2 \
    ../../test_data/pano/img_4971.cr2 \
    ../../test_data/pano/img_4972.cr2 \
    ../download
 
 #put stereo files to download dir, names are different for now
-cp ../../test_data/stereo/R/img_1415.cr2 ../R
-cp ../../test_data/stereo/L/img_8008.cr2 ../L
+cp ../../test_data/stereo/R/img_1507.cr2 ../R
+cp ../../test_data/stereo/L/img_8100.cr2 ../L
 
 echo "==================================================================="
 echo " sort images"
@@ -204,19 +226,19 @@ echo "==================================================================="
 rawmk sort
 
 #images are sorted
-test -f 2012-03-24/img_7966.cr2
+test -f 2012-03-24/img_7977.cr2
 test -f 2014-01-28/img_4971.cr2
 test -f 2014-01-28/img_4972.cr2
 
 #stereo L R images are paired
-test -f 2014-01-28/img_1415r.cr2
-test -f 2014-01-28/img_1415l.cr2
+test -f 2014-01-28/img_1507r.cr2
+test -f 2014-01-28/img_1507l.cr2
 
 echo "==================================================================="
 echo " mark sbs stereo, independent stereo and pano and run make"
 echo "==================================================================="
 
-rawmk add_sbs 2012-03-24/img_7966.cr2
+rawmk add_sbs 2012-03-24/img_7977.cr2
 rawmk add_stereo --both 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 rawmk add_pano 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 
@@ -228,27 +250,36 @@ make -j8
 test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto
 test -f 2014-01-28/img_4971_img_4972.jps 
 test -f 2014-01-28/img_4972_img_4971.jps  
-test -f 2012-03-24/img_7966.jps
-test -f 2012-03-24/img_7966.jpg
+test -f 2012-03-24/img_7977.jps
+test -f 2012-03-24/img_7977.jpg
 test -f 2014-01-28/img_4971.jpg
 test -f 2014-01-28/img_4972.jpg
-test -f 2014-01-28/img_1415.jps
+test -f 2014-01-28/img_1507.jps
 
 echo "==================================================================="
 echo " create pano image - part 2 - tiff output"
+echo " edit rawtherapee parameters"
 echo "==================================================================="
+
+sed -i -e "s|VerticalFlip=false|VerticalFlip=true|" 2012-03-24/img_7977.cr2.pp3
+rm 2012-03-24/img_7977.pto # let the file autogenerate again
+
 touch timestamp
 make -j8
 test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif
 test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif -nt timestamp
 
+test 2012-03-24/img_7977.jps -nt timestamp
+test 2012-03-24/img_7977.jpg -nt timestamp
+
 # previously created files stay unchanged
 test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -ot timestamp
 test 2014-01-28/img_4971_img_4972.jps -ot timestamp
 test 2014-01-28/img_4972_img_4971.jps -ot timestamp
-test 2012-03-24/img_7966.jps -ot timestamp
-test 2012-03-24/img_7966.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
-test 2014-01-28/img_1415.jps -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
 
+echo "==================================================================="
+echo " all tests passed"
+echo "==================================================================="
