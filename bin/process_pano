@@ -1,0 +1,15 @@
+#!/bin/sh
+# $1 pto
+# $2.. targets
+
+PREFIX=`basename $1 .pto`
+if [ -z "$MAKE" ] ; then
+	export MAKE=make
+fi
+
+pto2mk -o "$1.mk" -p "$PREFIX" "$1"
+$MAKE -f "$1.mk" all
+$MAKE -f "$1.mk" clean
+
+shift
+touch "$@"

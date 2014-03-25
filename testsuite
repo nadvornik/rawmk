@@ -1,0 +1,254 @@
+#!/bin/bash
+set -e -x
+export PATH=$PWD/bin:$PATH
+
+echo "==================================================================="
+echo " TEST 1 - individual steps"
+echo "==================================================================="
+
+echo "==================================================================="
+echo " prepare directory structure"
+echo "==================================================================="
+
+#prepare directory structure
+rm -rf test1
+cp -pr template test1
+
+# initialize makefile
+cd test1/collection
+
+rawmk makefile .
+# call make - no images, do it just exits
+make 
+
+echo "==================================================================="
+echo " 'download' images"
+echo "==================================================================="
+
+# put files to download dir
+cp ../../test_data/sbs_stereo/img_7966.cr2 \
+   ../../test_data/pano/img_4971.cr2 \
+   ../../test_data/pano/img_4972.cr2 \
+   ../download
+
+#put stereo files to download dir, names are different for now
+cp ../../test_data/stereo/R/img_1415.cr2 ../R
+cp ../../test_data/stereo/L/img_8008.cr2 ../L
+
+echo "==================================================================="
+echo " sort images"
+echo "==================================================================="
+
+#call sort
+rawmk sort
+
+#images are sorted
+test -f 2012-03-24/img_7966.cr2
+test -f 2014-01-28/img_4971.cr2
+test -f 2014-01-28/img_4972.cr2
+
+#stereo L R images are paired
+test -f 2014-01-28/img_1415r.cr2
+test -f 2014-01-28/img_1415l.cr2
+
+echo "==================================================================="
+echo " get default result"
+echo "==================================================================="
+
+#call make - get default results
+make
+
+
+#check default results
+test -f 2012-03-24/img_7966.jpg
+test -f 2014-01-28/img_4971.jpg
+test -f 2014-01-28/img_4972.jpg
+
+test -f 2014-01-28/img_1415.jps
+
+#sbs stereo
+echo "==================================================================="
+echo " create stereo image from 1 SBS source"
+echo "==================================================================="
+rawmk add_sbs 2012-03-24/img_7966.cr2
+touch timestamp
+make
+
+# result exists and is newly created
+test -f 2012-03-24/img_7966.jps
+test 2012-03-24/img_7966.jps -nt timestamp
+
+# previously created files stay unchanged
+test 2012-03-24/img_7966.jpg -ot timestamp
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1415.jps -ot timestamp
+
+#stereo from 2 images
+echo "==================================================================="
+echo " create stereo image from 2 independent sources"
+echo "==================================================================="
+rawmk add_stereo --swap 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
+touch timestamp
+make
+
+# result exists and is newly created
+test -f 2014-01-28/img_4972_img_4971.jps
+test 2014-01-28/img_4972_img_4971.jps -nt timestamp
+
+# previously created files stay unchanged
+test 2012-03-24/img_7966.jps -ot timestamp
+test 2012-03-24/img_7966.jpg -ot timestamp
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1415.jps -ot timestamp
+
+
+echo "==================================================================="
+echo " create stereo image from 2 independent sources, swap L R images"
+echo "==================================================================="
+rawmk add_stereo 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
+touch timestamp
+make
+# result exists and is newly created
+test -f 2014-01-28/img_4971_img_4972.jps
+test 2014-01-28/img_4971_img_4972.jps -nt timestamp
+
+# previously created files stay unchanged
+test 2014-01-28/img_4972_img_4971.jps -ot timestamp
+test 2012-03-24/img_7966.jps -ot timestamp
+test 2012-03-24/img_7966.jpg -ot timestamp
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1415.jps -ot timestamp
+
+
+#pano
+echo "==================================================================="
+echo " create pano image - pto first"
+echo "==================================================================="
+rawmk add_pano 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
+touch timestamp
+make
+
+# result exists and is newly created, it is just pto file for now
+test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto
+test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -nt timestamp
+
+# previously created files stay unchanged
+test 2014-01-28/img_4971_img_4972.jps -ot timestamp
+test 2014-01-28/img_4972_img_4971.jps -ot timestamp 
+test 2012-03-24/img_7966.jps -ot timestamp
+test 2012-03-24/img_7966.jpg -ot timestamp
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1415.jps -ot timestamp
+
+echo "==================================================================="
+echo " create pano image - part 2 - tiff output"
+echo "==================================================================="
+touch timestamp
+make
+test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif
+test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif -nt timestamp
+
+# previously created files stay unchanged
+test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -ot timestamp
+test 2014-01-28/img_4971_img_4972.jps -ot timestamp
+test 2014-01-28/img_4972_img_4971.jps -ot timestamp
+test 2012-03-24/img_7966.jps -ot timestamp
+test 2012-03-24/img_7966.jpg -ot timestamp
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1415.jps -ot timestamp
+
+echo "==================================================================="
+echo " TEST 2 - the same as test 1, as fast as possible "
+echo "==================================================================="
+
+cd ../..
+echo "==================================================================="
+echo " prepare directory structure"
+echo "==================================================================="
+
+#prepare directory structure
+rm -rf test2
+cp -pr template test2
+
+# initialize makefile
+cd test2/collection
+
+rawmk makefile .
+# call make - no images, do it just exits
+make 
+
+echo "==================================================================="
+echo " 'download' images"
+echo "==================================================================="
+
+# put files to download dir
+cp ../../test_data/sbs_stereo/img_7966.cr2 \
+   ../../test_data/pano/img_4971.cr2 \
+   ../../test_data/pano/img_4972.cr2 \
+   ../download
+
+#put stereo files to download dir, names are different for now
+cp ../../test_data/stereo/R/img_1415.cr2 ../R
+cp ../../test_data/stereo/L/img_8008.cr2 ../L
+
+echo "==================================================================="
+echo " sort images"
+echo "==================================================================="
+
+#call sort
+rawmk sort
+
+#images are sorted
+test -f 2012-03-24/img_7966.cr2
+test -f 2014-01-28/img_4971.cr2
+test -f 2014-01-28/img_4972.cr2
+
+#stereo L R images are paired
+test -f 2014-01-28/img_1415r.cr2
+test -f 2014-01-28/img_1415l.cr2
+
+echo "==================================================================="
+echo " mark sbs stereo, independent stereo and pano and run make"
+echo "==================================================================="
+
+rawmk add_sbs 2012-03-24/img_7966.cr2
+rawmk add_stereo --both 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
+rawmk add_pano 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
+
+touch timestamp
+make -j8
+
+
+# result exists and is newly created, it is just pto file for now
+test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto
+test -f 2014-01-28/img_4971_img_4972.jps 
+test -f 2014-01-28/img_4972_img_4971.jps  
+test -f 2012-03-24/img_7966.jps
+test -f 2012-03-24/img_7966.jpg
+test -f 2014-01-28/img_4971.jpg
+test -f 2014-01-28/img_4972.jpg
+test -f 2014-01-28/img_1415.jps
+
+echo "==================================================================="
+echo " create pano image - part 2 - tiff output"
+echo "==================================================================="
+touch timestamp
+make -j8
+test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif
+test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif -nt timestamp
+
+# previously created files stay unchanged
+test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -ot timestamp
+test 2014-01-28/img_4971_img_4972.jps -ot timestamp
+test 2014-01-28/img_4972_img_4971.jps -ot timestamp
+test 2012-03-24/img_7966.jps -ot timestamp
+test 2012-03-24/img_7966.jpg -ot timestamp
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1415.jps -ot timestamp
+

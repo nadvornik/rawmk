@@ -1,0 +1,6 @@
+#!/bin/sh
+
+install -m 755 bin/* /usr/bin
+
+mkdir -p /usr/share/rawmk
+cp -r template /usr/share/rawmk

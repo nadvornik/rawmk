@@ -1,0 +1,15 @@
+#!/bin/sh
+# $1 stereo pto
+# $2 out jps
+
+PREFIX=`basename $1 .pto`
+if [ -z "$MAKE" ] ; then
+	export MAKE=make
+fi
+
+pto2mk -o "$1.mk" -p "$PREFIX"_ "$1"
+$MAKE -f "$1.mk" "$PREFIX"__exposure_layers_0001.tif "$PREFIX"__exposure_layers_0000.tif
+convert "$PREFIX"__exposure_layers_0000.tif "$PREFIX"__exposure_layers_0001.tif +append tmp_"$PREFIX".jpg
+#exiftool -overwrite_original -tagsFromFile $2 tmp_"$PREFIX".jpg
+mv tmp_"$PREFIX".jpg "$2"
+rm "$PREFIX"__exposure_layers_0001.tif "$PREFIX"__exposure_layers_0000.tif

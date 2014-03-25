@@ -1,0 +1,11 @@
+#!/bin/sh
+# $1 raw
+# $2 output pp3
+
+PP3=`rawmk get_conf PP3_DEFAULT`
+
+if [ ! -f "$2" ]; then
+	cp "$PP3" "$2"
+else
+	touch "$2"
+fi

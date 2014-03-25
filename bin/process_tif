@@ -1,0 +1,6 @@
+#!/bin/sh
+# $1 tif
+# $2 pp3
+# $3 output jpg
+
+rawtherapee -p "$2" -o "$3" -Y -c "$1"

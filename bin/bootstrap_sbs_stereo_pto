@@ -1,0 +1,53 @@
+#!/usr/bin/perl
+# $1 tif
+# $2 out pto
+
+use strict;
+use Panotools::Script;
+use Image::Size;
+use Math::Trig;
+
+my $img = $ARGV[0];
+my $pto = $ARGV[1];
+
+system('convert', "$img", '-gravity', 'East', '-crop', '50x100%+0+0', '-blur', '2', "tmp_${img}_r.tif") == 0 or die "convert failed on right image";
+system('convert', "$img", '-gravity', 'West', '-crop', '50x100%+0+0', '-blur', '2', "tmp_${img}_l.tif") == 0 or die "convert failed on left image";
+
+
+system('align_image_stack', '-v', '-t', '6','-p', $pto, '-x', '-s', '4', '-P', '-C', "tmp_${img}_r.tif", "tmp_${img}_l.tif") == 0 or die "align_image_stack failed";
+
+system("cp", "$pto", "$pto.ok");
+
+my $p = new Panotools::Script;
+
+$p->Read($pto);
+
+my ($w, $h) = imgsize($img);
+
+my $half_w = $p->Image->[0]{w};
+
+foreach my $i (@{$p->Image}) {
+	$i->{w} = $w;
+	$i->{n} = "\"$img\"";
+	$i->{v} = rad2deg(atan(tan(deg2rad($i->{v} / 2)) * 2)) * 2;
+}
+
+foreach my $par (qw(Eb Eev Er Ra Rb Rc Rd Re Va Vb Vc Vd Vx Vy a b c d e f g v t)) {
+	$p->Image->[1]{$par} = $p->Image->[0]{$par} if defined $p->Image->[0]{$par};
+}
+
+$p->Image->[0]{d} = $w / 4;
+$p->Image->[1]{d} = - $w / 4;
+
+
+foreach my $pt (@{$p->Control}) {
+	my $x = $pt->{x};
+	$pt->{x} = $half_w + $x;
+}
+
+$p->Option->{outputStacksMinOverlap} = 0.01;
+
+$p->Write($pto);
+
+unlink("tmp_${img}_r.tif");
+unlink("tmp_${img}_l.tif");

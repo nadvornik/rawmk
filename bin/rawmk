@@ -1,0 +1,1284 @@
+#!/usr/bin/perl
+
+
+#=======================================================================================================
+
+package RAWMK::Config;
+use strict;
+use File::Spec;
+use Cwd 'abs_path';
+use Data::Dumper;
+use Config::IniFiles;
+
+sub new 
+{
+	my $class = shift;
+	my $dir = shift;
+	my $self = {};
+	bless $self, $class;
+	$self->initialize($dir);
+	return $self;
+}
+
+sub find_config
+{
+	my ($self) = @_;
+	
+	my @path = File::Spec->splitdir($self->{BASEDIR});
+	
+	while (@path && ! -f File::Spec->catfile(@path, 'config', 'defaults.ini')) {
+		pop @path;
+	}
+	die "Configuration directory not found" if @path == 0;
+	return  File::Spec->catdir(@path);
+}
+
+sub initialize
+{
+	my ($self, $dir) = @_;
+	
+	$self->{BASEDIR} = abs_path($dir);
+	$self->{TOPDIR} = find_config($self, $self->{BASEDIR});
+	$self->{REL_TOPDIR} = File::Spec->abs2rel($self->{TOPDIR}, $self->{BASEDIR});
+	$self->{CONFDIR} = File::Spec->catdir($self->{TOPDIR}, "config");
+	$self->{REL_CONFDIR} = File::Spec->abs2rel($self->{CONFDIR}, $self->{BASEDIR});
+	$self->{CONF_FILE} = File::Spec->catfile($self->{CONFDIR}, "defaults.ini");
+	$self->read_config();
+}
+
+sub read_config
+{
+	my ($self, $dir) = @_;
+	$self->{CONF} = Config::IniFiles->new( -file => $self->{CONF_FILE} ) or die "error parsing config file";
+	for my $p (qw(COLLECTION DOWNLOAD DOWNLOAD_R DOWNLOAD_L)) {
+		$self->{$p} = File::Spec->catfile($self->{TOPDIR}, $self->{CONF}->val( 'PATHS', $p ));
+		$self->{"REL_$p"} = File::Spec->abs2rel($self->{$p}, $self->{BASEDIR});
+	}
+
+	for my $p ($self->{CONF}->Parameters('PP3'), qw(DEFAULT NEUTRAL STEREO)) {
+		$self->{"PP3_$p"} = File::Spec->catfile($self->{REL_CONFDIR}, $self->{CONF}->val( 'PP3', $p )) if defined $self->{CONF}->val( 'PP3', $p );
+	}
+
+	for my $p (qw(BOOTSTRAP_PANO_PTO BOOTSTRAP_PP3 BOOTSTRAP_SBS_STEREO_PTO BOOTSTRAP_STEREO_PTO BOOTSTRAP_XMP_FOR_RAW COLLAPSE_TIF
+	              RAWMK PROCESS_JPS_PTO PROCESS_PANO_PTO PROCESS_RAW PROCESS_RAW_EXPANDED PROCESS_TIF SYNC_STEREO_PP3)) {
+		$self->{"S_$p"} = $self->{CONF}->val( 'SCRIPTS', $p );
+	}
+
+	$self->{class} = {};
+	for my $p (qw(RAW IMAGE META)) {
+		my @values = $self->{CONF}->val( 'EXTENSIONS', $p );
+		$self->{"EXT_$p"} = [ @values ];
+		foreach my $ext (@values) {
+			$self->{class}{$ext} = $p;
+		}
+	}
+
+	for my $p (qw(ACTION DEST_PATTERN)) {
+		$self->{"SORT_$p"} = $self->{CONF}->val( 'SORT', $p );
+	}
+
+}
+
+#=======================================================================================================
+
+package RAWMK::Makefile;
+use strict;
+use File::Spec;
+use File::Basename;
+use Cwd 'abs_path';
+use Panotools::Script;
+use Data::Dumper;
+
+
+sub new 
+{
+	my $class = shift;
+	my ($dir, $outfile) = @_;
+	my $self = {};
+	bless $self, $class;
+	$self->initialize($dir, $outfile);
+	return $self;
+}
+
+sub initialize
+{
+	my ($self, $dir, $outfile) = @_;
+	$self->{makefile} = '';
+	
+	$self->{def_targets} = [];
+	$self->{files} = {};
+	$self->{CONF} = RAWMK::Config->new($dir);
+	$self->{dir} = $self->{CONF}{BASEDIR};
+	$outfile = 'Makefile' unless defined $outfile;
+	$self->{outfile} = File::Spec->catfile($self->{dir}, $outfile);
+	
+}
+
+my @geotag_targets;
+
+sub add_rule
+{
+	my $self = shift;
+	my $out = shift;
+	my $in = shift;
+	
+	foreach my $string (@$out) {
+#		$string =~ s/(.*)\./$1%/;
+		
+		$string =~ s/([ #|\\])/\\$1/g;
+		$self->{makefile} .= "$string ";
+	}
+
+	$self->{makefile} .= ": ";
+	foreach my $string (@$in) {
+#		$string =~ s/(.*)\./$1%/;
+		
+		$string =~ s/([ #|\\])/\\$1/g;
+		$self->{makefile} .= "$string ";
+	}
+
+	$self->{makefile} .= "\n";
+
+	while (my $cmd = shift) {
+		if (@$cmd > 0) {
+			$self->{makefile} .= "\t+";
+		}
+		foreach my $string (@$cmd) {
+			$string =~ s/([ #\\])/\\$1/g;
+			$self->{makefile} .= "$string ";
+		}
+		$self->{makefile} .= "\n"
+	}
+	$self->{makefile} .= "\n"
+}
+
+# make does not support mult-target rules, but it
+# supports mult-target pattern rules
+# convert rule to pattern rule by replacing last dot with %
+sub add_fake_pattern_rule
+{
+	my $self = shift;
+	my $out = shift;
+	my $in = shift;
+	
+	foreach my $string (@$out) {
+		$string =~ s/(.*)\./$1%/;
+	}
+
+	foreach my $string (@$in) {
+		$string =~ s/(.*)\./$1%/;
+	}
+	$self->add_rule($out, $in, @_);
+}
+
+
+sub ufraw_get_in_out
+{
+	my ($self, $file) = @_;
+	
+	my ($in, $out);
+	
+	open(my $fh, '<', $file) or return;
+	
+	while (<$fh>) {
+		$in = $1 if /<InputFilename>(.*)<\/InputFilename>/;
+		$out = $1 if /<OutputFilename>(.*)<\/OutputFilename>/;
+	}
+	close($fh);
+	return ($in, $out);
+}
+
+#foreach my $ufraw (@ARGV) {
+#	my ($in, $out) = get_in_out($ufraw);
+#	if ($in && $out) {
+#		# duplicate ufraw behavior - look for sources in current dir 
+#		# if the original path does not exist
+#		$in =~ s/^.*\/// unless -f $in;
+#		$in = File::Spec->abs2rel($in);
+#		$out =~ s/^.*\///; #ufraw is forced to use current dir for output in the makefile
+#		gen_makefile($ufraw, $in, $out);
+#	}
+#}
+sub pto_parse
+{
+	my ($self, $pto) = @_;
+	my @req;
+	my @out;
+	my $p = new Panotools::Script;
+	$p->Read ($pto);
+	foreach my $i (@{$p->Image}) {
+		my $name = $i->n;
+		$name =~ s/^"(.*)"$/$1/;
+		push @req, $name;
+	}
+	my ($path_prefix) = basename($pto, ".pto");
+	
+	push @out, $path_prefix .'.'. ($p->Option->{outputImageType} || 'tif') 
+		if $p->Option->{outputLDRBlended} =~ /true/;
+	push @out, $path_prefix .'_fused.'. ($p->Option->{outputImageType} || 'tif')
+		if $p->Option->{outputLDRExposureBlended} =~ /true/;
+	push @out, $path_prefix .'_blended_fused.'. ($p->Option->{outputImageType} || 'tif')
+		if $p->Option->{outputLDRExposureLayersFused} =~ /true/;
+	push @out, $path_prefix .'_hdr.'. ($p->Option->{outputImageTypeHDR} || 'exr')
+		if $p->Option->{outputHDRBlended} =~ /true/;
+	
+	return (\@req, \@out);
+}
+
+sub read_filelist
+{
+	my ($self) = @_;
+	opendir my $dh, $self->{dir} or die $!;
+	my $res = {};
+	while( my $file = readdir($dh) ) {
+		next if $file =~ m[^\.{1,2}$];
+		my $path = $self->{dir} .'/' . $file;
+		$res->{$file} = {PATH => $path};
+	}
+	$self->{files} = $res;
+}
+
+sub list_tif_expanded
+{
+	my $self = shift;
+	my @out;
+	foreach my $img (@_) {
+		push @out, $img;
+		push @out, "$img.expanded" if $img =~ /\.tif$/;
+	}
+	return @out;
+}
+
+sub parse_img_pair
+{
+	my ($self, $pair) = @_;
+	
+	$pair =~ s/\..*$//;
+	
+	if ($pair =~ /([a-zA-Z]+)_([0-9]{4})_([0-9]{4})$/) {
+		return($1, $2, $3);
+	}
+
+	if ($pair =~ /([a-zA-Z]+)_([0-9]{4})_\1_([0-9]{4})$/) {
+		return($1, $2, $3);
+	}
+
+	return;
+}
+
+sub add_pano
+{
+	my ($self, $prefix, $raws) = @_;
+
+	my $pto = "$prefix.pto";
+	if ( -f "$self->{dir}/$pto" ) {
+		#already have pto file
+		my ($prereqs, $targets) = $self->pto_parse("$self->{dir}/$pto");
+		
+		my @etargets = $self->list_tif_expanded(@$targets);
+		my @eprereqs = $self->list_tif_expanded(@$prereqs);
+		
+		$self->add_fake_pattern_rule(\@etargets, [$pto, @eprereqs], [$self->{CONF}{S_PROCESS_PANO_PTO}, $pto, @etargets]);
+		push @{$self->{def_targets}}, @$targets;
+	}
+	else {
+		#create pto and stop - then run make again
+		my @prereqs;
+		foreach my $raw_name (@$raws) {
+			my ($name,$path,$suffix) = fileparse($raw_name, @{$self->{CONF}{EXT_RAW}});
+			push @prereqs, "$name.neutral.tif";
+		}
+		if (@prereqs > 0) {
+			$self->add_rule([$pto], \@prereqs, [$self->{CONF}{S_BOOTSTRAP_PANO_PTO}, $pto, @prereqs ]);
+			push @{$self->{def_targets}}, $pto;
+		}
+	}
+}
+
+sub add_stereo
+{
+	my ($self, $base, $r_tif, $l_tif) = @_;
+	
+	my $jps = "$base.jps";
+	my $pto = "$base.pto";
+			
+	if (! -f "$self->{dir}/$pto") {
+		$l_tif = $r_tif unless $l_tif;
+		if ($l_tif eq $r_tif) {
+			#single image, handle as sbs
+			$self->add_rule([$pto], ["$r_tif"], [ $self->{CONF}{S_BOOTSTRAP_SBS_STEREO_PTO}, "$r_tif", $pto ]);
+		}
+		else {
+			# 2 images
+			$self->add_rule([$pto], ["$r_tif", "$l_tif"], [ $self->{CONF}{S_BOOTSTRAP_STEREO_PTO}, "$r_tif", "$l_tif", $pto ]);
+		}
+		# prereqs for default that we create
+		$self->add_rule([$jps], [$pto, "$r_tif", "$r_tif.expanded", "$l_tif", "$l_tif.expanded"], [$self->{CONF}{S_PROCESS_JPS_PTO}, $pto, $jps]);
+	}
+	else {
+		# read prereqs from existing pto
+		my ($prereqs) = $self->pto_parse("$self->{dir}/$pto");
+		my @e_prereqs = $self->list_tif_expanded(@$prereqs);
+		
+		$self->add_rule([$jps], [$pto, @e_prereqs], [$self->{CONF}{S_PROCESS_JPS_PTO}, $pto, $jps]);
+	}
+	push @{$self->{def_targets}}, $jps; # make all creates jps by default
+}
+
+sub add_pano_dir
+{
+	my ($self) = @_;
+	my ($name,$path) = fileparse($self->{dir});
+	
+	my ($prefix, $n1, $n2) = $self->parse_img_pair($name);
+	
+	if (defined $n1 && $n1 < $n2) {
+		$prefix = undef if $prefix eq 'pano';
+		$prefix = 'img' unless defined $prefix;
+		my @raws;
+		foreach my $suffix (@{$self->{CONF}{EXT_RAW}}) {
+			for (my $n = $n1; $n <= $n2; $n++) {
+				my $raw = sprintf("${prefix}_%04d$suffix", $n);
+				
+				$raw = "../$raw" if (! -f "$self->{dir}/$raw");
+			
+				next if (! -f "$self->{dir}/$raw");
+				push @raws, $raw;
+			}
+		}
+		
+		if (@raws > 0) {
+			$self->add_pano("pano_${n1}_${n2}", \@raws);
+			$self->{pano_dir} = 1;
+		}
+	}
+}
+
+sub parse_rmk
+{
+	my ($self, $file) = @_;
+	
+	open(my $fh, '<', $file) or return;
+	
+	while (<$fh>) {
+		chomp;
+		if (/^STEREO_PAIR\s+([^ ]+)\s+([^ ]+)\s*$/) {
+			my ($i1, $i2) = ($1, $2); 
+			my ($b1, $b2) = ($i1, $i2);
+			$b1 =~ s/\..*$//;
+			$b2 =~ s/\..*$//;
+			$self->add_stereo("${b1}_${b2}", $i1, $i2);
+		}
+		if (/^STEREO_PARALLEL\s+(.+)$/) {
+			my $i1 = $1;
+			my $b1 = $i1;
+			$b1 =~ s/\..*$//;
+			$self->add_stereo("${b1}", $i1);
+		}
+	}
+	close($fh);
+}
+
+sub proc_rmk
+{
+	my ($self) = @_;
+
+	foreach my $file (sort keys %{$self->{files}}) {
+		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".rmk");
+		if ($suffix) {
+			$self->parse_rmk($self->{files}{$file}{PATH});
+		}
+	}
+}
+
+sub proc_ufraw
+{
+}
+
+sub proc_raw_lr
+{
+	my ($self) = @_;
+	my @r_suffix = map { 'r' . $_ } @{$self->{CONF}{EXT_RAW}};
+	
+	foreach my $r_file (sort keys %{$self->{files}}) {
+		my ($name,$path,$r_suffix) = fileparse($self->{files}{$r_file}{PATH}, @r_suffix);
+		my $suffix = $r_suffix;
+		$suffix =~ s/^r//;
+		if ($r_suffix && $self->{files}{"${name}l$suffix"}) {
+			my $l_file = "${name}l$suffix";
+			my $r_name = "${name}r";
+			my $l_name = "${name}l";
+
+			$self->{files}{$r_file}{NO_DEF_PROC} = 1;
+			$self->{files}{$l_file}{NO_DEF_PROC} = 1;
+			
+			# add default xmp if missing
+			my $r_xmp = "$r_name.xmp";
+			my $l_xmp = "$l_name.xmp";
+			if (! $self->{files}{$r_xmp}) {
+				$self->add_rule([$r_xmp], [$r_file], [$self->{CONF}{S_BOOTSTRAP_XMP_FOR_RAW}, $r_file, $r_xmp]);
+			}
+			if (! $self->{files}{$l_xmp}) {
+				$self->add_rule([$l_xmp], [$l_file], [$self->{CONF}{S_BOOTSTRAP_XMP_FOR_RAW}, $l_file, $l_xmp]);
+			}
+			
+			# geotag xmp
+			push @geotag_targets, $l_xmp;
+			push @geotag_targets, $r_xmp;
+
+			# add default raw processor config (rawtherapee pp3 file) if missing
+			my $r_raw_pp3 = "$r_file.pp3";
+			my $l_raw_pp3 = "$l_file.pp3";
+			if (! $self->{files}{$r_raw_pp3}) {
+				$self->add_rule([$r_raw_pp3], [$r_file], [$self->{CONF}{S_BOOTSTRAP_PP3}, $r_file, $r_raw_pp3]);
+			}
+			
+			# generate left proc file from the right one
+			$self->add_rule([$l_raw_pp3], [$r_raw_pp3, $l_file, $r_file], [$self->{CONF}{S_SYNC_STEREO_PP3}, $r_raw_pp3, $l_raw_pp3, $l_file, $r_file]);
+			
+			# rule for 16bit tif added in add_default_raw_patterns
+
+			$self->add_stereo($name, "$r_name.tif", "$l_name.tif");
+		}
+	}
+}
+
+sub proc_raw
+{
+	my ($self) = @_;
+	
+	foreach my $file (sort keys %{$self->{files}}) {
+		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, @{$self->{CONF}{EXT_RAW}});
+		if ($suffix) {
+			next if $self->{files}{$file}{NO_DEF_PROC};
+			
+			# add default xmp if missing
+			my $xmp = "$name.xmp";
+			if (! $self->{files}{$xmp}) {
+				$self->add_rule([$xmp], [$file], [$self->{CONF}{S_BOOTSTRAP_XMP_FOR_RAW}, $file, $xmp]);
+			}
+			
+			# geotag xmp
+			push @geotag_targets, $xmp;
+
+			# add default raw processor config (rawtherapee pp3 file) if missing
+			my $raw_pp3 = "$file.pp3";
+			if (! $self->{files}{$raw_pp3}) {
+				$self->add_rule([$raw_pp3], [$file], [$self->{CONF}{S_BOOTSTRAP_PP3}, $file, $raw_pp3]);
+			}
+			
+			#rules for tif and jpg are added in add_default_raw_patterns
+			# add jpg target
+			push @{$self->{def_targets}}, "$name.jpg"; # make all creates jpg by default
+
+		}
+	}
+}
+
+sub proc_tif_pp3
+{
+	my ($self) = @_;
+
+	foreach my $file (sort keys %{$self->{files}}) {
+		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".tif.pp3");
+		if ($suffix) {
+			push @{$self->{def_targets}}, "$name.jpg";
+		}
+	}
+}
+
+sub add_default_raw_patterns
+{
+	my ($self) = @_;
+	
+	for my $raw (@{$self->{CONF}{EXT_RAW}}) {
+	
+		# add rule for jpg
+		$self->add_rule(["%.jpg"], ["%$raw", "%$raw.pp3", "%.xmp"], [$self->{CONF}{S_PROCESS_RAW}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.jpg'"]);
+
+		# add rule for 16bit tif
+		$self->add_rule(["%.tif", "%.tif.expanded"], ["%$raw", "%$raw.pp3", "%.xmp"], [$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.tif'"]);
+
+		# add rule for neutral 16bit tif
+		$self->add_rule(["%.neutral.tif", "%.neutral.tif.expanded"], ["%$raw", "%.xmp"], 
+			[$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", $self->{CONF}{PP3_NEUTRAL}, "'\$*.xmp'", "'\$*.neutral.tif'"]);
+
+		if ($self->{pano_dir}) {
+			# add rule for neutral 16bit tif, take raw files from parent directory
+			$self->add_rule(["%.neutral.tif", "%.neutral.tif.expanded"], ["../%$raw", "../%.xmp"], 
+				[$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'../\$*$raw'", $self->{CONF}{PP3_NEUTRAL}, "'../\$*.xmp'", "'\$*.neutral.tif'"]);
+		}
+	}
+	
+	# add rule for converting 16bit tif to jpg with rawtherapee
+	$self->add_rule(["%.jpg"], ["%.tif", "%.tif.expanded", "%.tif.pp3"], [$self->{CONF}{S_PROCESS_TIF}, "'\$*.tif'", "'\$*.tif.pp3'", "'\$*.jpg'"]);
+	
+}
+
+
+sub proc_subdirs
+{
+	my ($self) = @_;
+	my @rec;
+	
+	foreach my $file (sort keys %{$self->{files}}) {
+		if (-d $self->{files}{$file}{PATH}) {
+			push @rec, ['test', '-f', "$file/Makefile", '||', $self->{CONF}{S_RAWMK}, 'makefile', "$file" ];
+			push @rec, ['$(MAKE)', '-C', "$file"];
+		}
+	}
+	$self->add_rule(["SUBDIRS"], [], @rec);
+}
+
+
+sub add_collapse_rules
+{
+	my ($self) = @_;
+	my @collapse;
+	foreach my $file (sort keys %{$self->{files}}) {
+		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".expanded");
+		if ($suffix) {
+			$self->add_rule(["$name.expanded.COLLAPSE"], [], [$self->{CONF}{S_COLLAPSE_TIF}, $name ]);
+			push @collapse, "$name.expanded.COLLAPSE";
+			}
+	}
+	$self->add_rule([".PHONY"], ['clean', @collapse]);
+	$self->add_rule(["clean"], \@collapse);
+}
+
+sub add_heading_rules
+{
+	my ($self) = @_;
+
+	$self->add_rule(['all'], ['outputs'], ['$(MAKE)', "clean"], ['$(MAKE)', "SUBDIRS"]);
+	$self->add_rule(['.SECONDARY'], []);
+	$self->add_rule(['Makefile'], ['$(shell', $self->{CONF}{S_RAWMK},  'check_makefile', '.', ')'], ['mv', '-f', '$<', '$@']);
+}
+
+sub process
+{
+	my ($self) = @_;
+
+
+	$self->read_filelist();
+
+	$self->add_heading_rules;
+
+	$self->proc_rmk();
+	
+	$self->proc_tif_pp3();
+
+	$self->proc_raw_lr();
+	$self->proc_raw();
+
+	$self->add_pano_dir();
+	
+	$self->add_default_raw_patterns();
+
+	$self->add_rule(['outputs'], \@{$self->{def_targets}});
+
+	$self->add_collapse_rules();
+
+	$self->proc_subdirs();
+}
+
+sub write_makefile
+{
+	my ($self) = @_;
+	open my $fh, ">", $self->{outfile} or die("Could not open file. $!");
+	print $fh $self->{makefile};
+	close $fh;
+}
+
+sub check_makefile
+{
+	my ($self, $checkfile) = @_;
+	$checkfile = File::Spec->catfile($self->{dir}, $checkfile);
+	
+	local $/=undef;
+	open my $fh, "<", $checkfile or return 0;
+	my $old_makefile = <$fh>;
+	close $fh;
+	
+	return ($old_makefile eq $self->{makefile});
+}
+
+#=======================================================================================================
+package RAWMK::Add;
+use strict;
+use File::Basename;
+use Data::Dumper;
+
+sub new 
+{
+	my $class = shift;
+	my $self = shift;
+	bless $self, $class;
+	return $self;
+}
+
+sub inputs
+{
+	my $self = shift;
+	my @files;
+	
+	foreach my $file (@_) {
+#		$file = File::Spec->abs2rel($file);
+		my($filename, $directory, $suffix) = fileparse($file, qr/\.[^.]*/);
+		
+		if (!defined $self->{directory}) {
+			$self->{directory} = $directory;
+			$self->{CONF} = RAWMK::Config->new($directory);
+			
+			if (!defined $self->{CONF}) {
+				print STDERR "can't find config for $directory\n";
+				exit 1;
+			}
+		}
+			
+		
+		my $class = $self->{CONF}{class}{lc $suffix};
+		$class = 'image' unless defined $class;
+		
+		$self->{class} = $class unless defined $self->{class};
+		
+		if ($self->{class} ne $class) {
+			print STDERR "input files are not the same class\n";
+			exit 1;
+		}
+
+		if ($self->{directory} ne $directory) {
+			print STDERR "input files are not in the same directory\n";
+			exit 1;
+		}
+		
+		my $core = $filename;
+		$core =~ s/^[^0-9]*([0-9]+.*)$/$1/;
+		
+		push @files, {
+			FILENAME => $filename,
+			SUFFIX => $suffix,
+			CORE => $core
+			};
+	}
+	
+	$self->{files} = \@files;
+}
+
+
+sub write_stereo_rmk_single
+{
+	my ($self) = @_;
+
+	my $rmk = $self->{directory} . '/' . $self->{files}[0]{FILENAME} . '_' . $self->{files}[1]{FILENAME} . ".rmk";
+
+	if (-f $rmk) {
+		print STDERR "file $rmk already exists\n";
+		exit 1;
+	}
+
+	open(my $fh, '>', $rmk);
+	if ($self->{class} eq 'RAW') {
+		print $fh 'STEREO_PAIR ' . $self->{files}[0]{FILENAME} . '.tif' . ' ' . $self->{files}[1]{FILENAME} . '.tif' . "\n";
+	}
+	else {
+		print $fh 'STEREO_PAIR ' . $self->{files}[0]{FILENAME} . $self->{files}[0]{SUFFIX} . ' ' . $self->{files}[1]{FILENAME} . $self->{files}[1]{SUFFIX} . "\n";
+	}
+	close($fh);
+}
+
+sub write_stereo_rmk
+{
+	my ($self) = @_;
+
+	if (@{$self->{files}} != 2) {
+		print STDERR "2 files required\n";
+		exit 1;
+	}
+	
+
+	if (!$self->{swap}) {
+		$self->write_stereo_rmk_single();
+	}
+
+	if ($self->{swap} || $self->{both}) {
+		my $tmp = $self->{files}[0];
+		$self->{files}[0] = $self->{files}[1];
+		$self->{files}[1] = $tmp;
+		$self->write_stereo_rmk_single();
+	}
+}
+
+sub write_sbs_rmk
+{
+	my ($self) = @_;
+	foreach my $file (@{$self->{files}}) {
+		my $rmk = $self->{directory} . '/' .  $file->{FILENAME} . ".rmk";
+
+		if (-f $rmk) {
+			print STDERR "file $rmk already exists\n";
+			next;
+		}
+
+		open(my $fh, '>', $rmk);
+
+		if ($self->{class} eq 'RAW') {
+			print $fh 'STEREO_PARALLEL ' . $file->{FILENAME} . '.tif' . "\n";
+		}
+		else {
+			print $fh 'STEREO_PARALLEL ' . $file->{FILENAME} . $file->{SUFFIX} . "\n";
+		}
+
+		close($fh);
+	}
+}
+
+sub write_pano_rmk
+{
+	my ($self) = @_;
+
+	if (@{$self->{files}} < 2) {
+		print STDERR "not enough input files\n";
+		exit 1;
+	}
+	
+	my $dir = $self->{directory} . '/' . $self->{prefix} . $self->{files}[0]{FILENAME} . '_' . $self->{files}[-1]{FILENAME};
+
+	unless (mkdir($dir) && chdir($dir)) {
+		print STDERR "can't create dir: $dir\n";
+		exit 1;
+	}
+
+	my $rmk = $self->{prefix} . $self->{files}[0]{FILENAME} . '_' . $self->{files}[-1]{FILENAME} . ".rmk";
+	if (-f $rmk) {
+		print STDERR "file $rmk already exists\n";
+		exit 1;
+	}
+
+	open(my $fh, '>', $rmk);
+
+	if ($self->{class} eq 'RAW') {
+		print $fh 'PANO ';
+		foreach my $file (@{$self->{files}}) {
+			print $fh $file->{FILENAME} . '.tif ';
+		}
+		print $fh "\n";
+	}
+	
+	close($fh);
+}
+
+#=======================================================================================================
+package RAWMK::Sort;
+use strict;
+use Image::ExifTool qw(:Public);
+use Data::Dumper;
+use File::Find;
+use File::Compare;
+use File::Copy;
+use File::Path;
+use File::Basename;
+use Cwd 'abs_path';
+use POSIX qw(strftime);
+use Getopt::Long;
+
+sub new 
+{
+	my $class = shift;
+	my $self = shift;
+	my $dir = shift;
+	bless $self, $class;
+	
+	$self->{CONF} = RAWMK::Config->new($dir);
+	
+	$self->{exiftool} = new Image::ExifTool;
+	$self->{class_prio} = {
+		'IMAGE' => 10,
+		'META'  => 5, #xmp file
+		'RAW'   => 50
+	};
+	
+	$self->{action} = $self->{CONF}{SORT_ACTION} unless defined $self->{action};
+	$self->{dest_pattern} = $self->{CONF}{SORT_DEST_PATTERN} unless defined $self->{dest_pattern};
+	
+	$self->{files} = {};
+	$self->{datehash} = {};
+	$self->{r_datehash} = {};
+	$self->{l_datehash} = {};
+	
+	return $self;
+}
+
+sub get_destdir
+{
+	my ($self, $file, $date, $exif) = @_;
+
+	#TODO: use other exif values
+	if (defined $date) {
+		return strftime($self->{dest_pattern}, localtime $date);
+	}
+	return undef;
+}
+
+sub scan_dir
+{
+	my ($self, $dir, $datehash) = @_;
+	my $wanted = sub
+	{
+		my $path = $File::Find::name;
+
+		-d $path && return;
+
+		my($filename, $directory, $suffix) = fileparse($path, qr/\.[^.]*/);
+		my $base = "$directory$filename";
+		
+		if (!defined $self->{files}{$base}) {
+			$self->{files}{$base} = { BASE => $base, FILES => {}, DEST => undef };
+		}
+		$self->{files}{$base}{FILES}{$path} = {};
+		
+		my $exif = $self->{exiftool}->ImageInfo($path, {
+		                                List => 1, 
+		                                DateFormat => '%s', 
+		                                StrictDate => 1});
+	
+		my $date = $exif->{'DateTimeOriginal'};
+		$date = $exif->{'CreateDate'} unless defined $date; #mov files
+		
+		$self->{files}{$base}{FILES}{$path}{DATE} = $date;
+		
+		my $class = $self->{CONF}{class}{lc($suffix)};
+		$self->{files}{$base}{FILES}{$path}{CLASS} = $class;
+		
+		$self->{files}{$base}{FILES}{$path}{ORIGINAL} = defined $class && 
+			($class eq 'RAW' || $class eq 'IMAGE') && ! $exif->{'ProcessingSoftware'};
+
+		my $prio = $self->{class_prio}{$class} if defined $class;
+		$prio = 0 unless defined $prio;
+		
+		#FIXME: date from raw files has higher prio
+		if ((!defined $self->{files}{$base}{DATE} || $self->{files}{$base}{DATEPRIO} < $prio) && defined $date) {
+			$self->{files}{$base}{DATE} = $date;
+			$self->{files}{$base}{DATEPRIO} = $prio;
+			$datehash->{$date} = $base;
+			$self->{files}{$base}{DEST} = $self->get_destdir($path, $date, $exif);
+		}
+		
+		$self->{files}{$base}{CLASS} = {} unless defined $self->{files}{$base}{CLASS};
+		if (defined $class) {
+			$self->{files}{$base}{CLASS}{$class} = $self->{files}{$base}{FILES}{$path};
+		}
+	};
+
+	find($wanted, abs_path($dir));
+}
+
+sub drop_unsortable
+{
+	my ($self) = @_;
+	
+	foreach my $base (keys %{$self->{files}}) {
+		if (!defined $self->{files}{$base}{DATE}) {
+			print STDERR "Can't sort $base\n";
+			delete $self->{files}{$base};
+		}
+	}
+}
+
+sub set_dest
+{
+	my ($self, $file_entry, $newname) = @_;
+	
+	$newname = basename($file_entry->{BASE}) unless defined $newname;
+	$newname = lc($newname);
+	
+	$file_entry->{DESTDIR} = abs_path($self->{CONF}{COLLECTION} . '/' . $file_entry->{DEST});
+	$file_entry->{NEWBASE} = $file_entry->{DESTDIR} . '/' . $newname; 
+	$file_entry->{NEWNAME} = $newname; 
+	foreach my $file (keys %{$file_entry->{FILES}}) {
+		my $lc_file= lc($file);
+		my($filename, $directory, $suffix) = fileparse($lc_file, qr/\.[^.]*/);
+		my $dest = $file_entry->{DESTDIR} . '/' . $newname . $suffix;
+		$file_entry->{FILES}{$file}{DEST} = $dest;
+	}
+}
+
+sub add_dest_all
+{
+	my ($self, $newname) = @_;
+	
+	foreach my $base (keys %{$self->{files}}) {
+		$self->set_dest($self->{files}{$base}, $newname)
+	}
+}
+
+sub dest_exists
+{
+	my ($self, $file_entry) = @_;
+	my $res = 0;
+	
+	foreach my $file (keys %{$file_entry->{FILES}}) {
+		my $dest = $file_entry->{FILES}{$file}{DEST};
+		if (-f $dest) {
+			if ($file =~ /\.ufraw$/) {
+				print STDERR "not comparing ufraw ID file $dest\n";
+			}
+			elsif (compare($file, $dest) == 0) {
+				$res = 1; #same
+				print STDERR "$dest exists and is the same\n";
+			}
+			else {
+				print STDERR "$dest exists and is different\n";
+				return -1; #different
+			}
+			
+		}
+	}
+	return $res;
+}
+
+sub copy_ufraw
+{
+	#special handling of ufraw files - they can't be just copied
+	my ($self, $file_entry, $ufraw) = @_;
+	open(my $in, '<', $ufraw);
+	open(my $out, '>', $file_entry->{FILES}{$ufraw}{DEST});
+	
+	while (my $line = <$in>) {
+		foreach my $file (keys %{$file_entry->{FILES}}) {
+			my $dest = $file_entry->{FILES}{$file}{DEST};
+			my($filename, $directory) = fileparse($file);
+			
+			$line =~ s/>[^<]*\/$filename</>$dest</;
+		}
+		print $out $line;
+	}
+	close($in);
+	close($out);	
+}
+
+sub action_copy
+{
+	my ($self, $file_entry) = @_;
+	
+	#if dest exist and is different - error, don't do anything
+	return -1 if ($self->dest_exists($file_entry) == -1);
+	
+	my $res = 0;
+	
+	foreach my $file (keys %{$file_entry->{FILES}}) {
+		my $dest = $file_entry->{FILES}{$file}{DEST};
+		if ($file =~ /\.ufraw$/) {
+			$self->copy_ufraw($file_entry, $file);
+		}
+		elsif (! -f $dest) {
+			copy($file, $dest);
+		}
+		if ($file_entry->{FILES}{$file}{ORIGINAL}) {
+			chmod 0444, $dest;
+			my $date = $file_entry->{FILES}{$file}{DATE};
+			utime $date, $date, $dest;
+		}
+	}
+	return $res;
+}
+
+sub action_move
+{
+	my ($self, $file_entry) = @_;
+
+	#if dest exist and is different - error, don't do anything
+	return -1 if ($self->dest_exists($file_entry) == -1);
+
+	my $res = 0;
+	
+	foreach my $file (keys %{$file_entry->{FILES}}) {
+		my $dest = $file_entry->{FILES}{$file}{DEST};
+		if ($file =~ /\.ufraw$/) {
+			$self->copy_ufraw($file_entry, $file);
+		}
+		elsif (! -f $dest) {
+			move($file, $dest);
+		}
+		else {
+			#we have already checked it is the same file
+			unlink($file);
+		}
+		if ($file_entry->{FILES}{$file}{ORIGINAL}) {
+			chmod 0444, $dest;
+			my $date = $file_entry->{FILES}{$file}{DATE};
+			utime $date, $date, $dest;
+		}
+	}
+	return $res;
+}
+
+sub action
+{
+	my ($self) = @_;
+	
+	foreach my $base (sort keys %{$self->{files}}) {
+		mkpath($self->{files}{$base}{DESTDIR});
+		if ($self->{'action'} eq 'cp') {
+			$self->action_copy($self->{files}{$base});
+		}
+		elsif ($self->{'action'} eq 'mv') {
+			$self->action_move($self->{files}{$base});
+		}
+	}
+}
+
+sub get_diff
+{
+	my ($hash1, $hash2) = @_;
+	my %dif;
+	my %maxdif;
+	foreach my $d1 (keys %$hash1) {
+		my $day=strftime('%Y-%m-%d', localtime $d1);
+		$dif{$day} = {} unless defined $dif{$day};
+		foreach my $d2 (keys %$hash2) {
+			my $d = $d2 - $d1;
+			next if ($d > 1800) || ($d < -1800); #allow max dif 30 minutes
+			$dif{$day}{$d} = 0 unless defined $dif{$day}{$d};
+			$dif{$day}{$d} = $dif{$day}{$d} + 1;
+		}
+	} 
+ 
+	foreach my $day (sort keys %dif) {
+		my @nums = sort {$dif{$day}{$b} <=> $dif{$day}{$a}} keys %{$dif{$day}};
+		$maxdif{$day} = $nums[0];
+	}
+	return \%maxdif;    
+}
+
+sub add_diff
+{
+	my ($t, $dif_h) = @_;
+    
+	my $day=strftime('%Y-%m-%d', localtime $t);
+
+	my $dif = $dif_h->{$day};
+	my $res = $t + $dif;
+	return $res;
+}
+
+sub process_normal
+{
+	my ($self) = @_;
+	$self->{datehash} = {};
+	$self->{files} = {};
+	
+	$self->scan_dir($self->{CONF}{DOWNLOAD}, $self->{datehash});
+	$self->drop_unsortable();
+	$self->add_dest_all();
+	$self->action();
+	print Dumper($self->{files});
+	
+}
+
+sub process_stereo
+{
+	my ($self) = @_;
+	$self->{datehash_r} = {};
+	$self->{datehash_l} = {};
+	$self->{files} = {};
+	$self->scan_dir($self->{CONF}{DOWNLOAD_L}, $self->{datehash_l});
+	$self->scan_dir($self->{CONF}{DOWNLOAD_R}, $self->{datehash_r});
+
+	print Dumper($self->{datehash_r});
+
+	$self->add_dest_all(); #set default target
+	
+	my @dif = get_diff($self->{datehash_l}, $self->{datehash_r});
+
+
+	foreach my $l_ts (sort keys %{$self->{datehash_l}}) {
+		my $left = $self->{datehash_l}{$l_ts};
+		my $r_ts = add_diff($l_ts, @dif);
+		my $right = $self->{datehash_r}{$r_ts};
+		$right = $self->{datehash_r}{$r_ts + 1} unless defined $right;
+		$right = $self->{datehash_r}{$r_ts - 1} unless defined $right;
+		$right = $self->{datehash_r}{$r_ts + 2} unless defined $right;
+		$right = $self->{datehash_r}{$r_ts - 2} unless defined $right;
+		unless (defined($right)) {
+			print "single: $left  $l_ts $r_ts\n:";
+			next;
+		}
+		$self->{files}{$left}{'DEST'} = $self->{files}{$right}{'DEST'}; #put both files to the same dir
+		my $newname = basename($right);
+		$self->set_dest($self->{files}{$left}, $newname . 'l');
+		$self->set_dest($self->{files}{$right}, $newname . 'r');
+		
+		$self->{files}{$right}{STEREO} = "RIGHT";
+		$self->{files}{$left}{STEREO} = "LEFT";
+		$self->{files}{$right}{STEREO_LEFT} = $self->{files}{$left};
+	}
+	$self->action();
+
+	print Dumper($self->{files});
+
+}
+
+sub process
+{
+	my ($self) = @_;
+	if ($self->{'action'} ne 'cp' && $self->{'action'} ne 'mv') {
+		print STDERR "invalid action '" . $self->{'action'} . "'\n";
+		exit 1;
+	}
+
+	if (! defined $self->{dest_pattern}) {
+		print STDERR "missing dest_pattern \n";
+		exit 1;
+	}
+
+	my $done = 0;
+print $self->{CONF}{DOWNLOAD} . ' ' . $self->{CONF}{COLLECTION} ."\n";
+	if (defined $self->{CONF}{DOWNLOAD} && -d $self->{CONF}{DOWNLOAD} && defined $self->{CONF}{COLLECTION}) {
+		$self->process_normal();
+		$done=1;
+	}
+
+	if (defined $self->{CONF}{DOWNLOAD_L} && defined $self->{CONF}{DOWNLOAD_R} &&
+	    -d $self->{CONF}{DOWNLOAD_L} && -d $self->{CONF}{DOWNLOAD_R} &&
+	    defined $self->{CONF}{COLLECTION}) {
+		$self->process_stereo();
+		$done=1;
+	}
+
+	if (!$done) {
+		print STDERR "required parameter missing\n";
+		exit 1;
+	}
+}
+
+#=======================================================================================================
+package main;
+use strict;
+use Cwd;
+use Getopt::Long;
+
+if ($ARGV[0] eq 'makefile') {
+	if (! -d $ARGV[1]) {
+		print STDERR $ARGV[1] ." not a directory\n";
+		exit(1);
+	}
+
+	my $directory = $ARGV[1];
+
+	my $mk = RAWMK::Makefile->new($directory, 'Makefile');
+	$mk->process();
+	$mk->write_makefile();
+}
+elsif ($ARGV[0] eq 'check_makefile') {
+	if (! -d $ARGV[1]) {
+		print STDERR $ARGV[1] ." not a directory\n";
+		exit(1);
+	}
+
+	my $directory = $ARGV[1];
+
+	my $mk = RAWMK::Makefile->new($directory, 'Makefile.new');
+	$mk->process();
+	if (! $mk->check_makefile('Makefile')) {
+		$mk->write_makefile();
+		printf "Makefile.new\n";
+	}
+}
+elsif ($ARGV[0] eq 'get_conf') {
+	my $param = $ARGV[1];
+	my $directory = $ARGV[2];
+	$directory = getcwd if (! defined $directory);
+	if (! -d $directory) {
+		print STDERR $directory ." not a directory\n";
+		exit(1);
+	}
+
+	my $cf = RAWMK::Config->new($directory);
+	if (defined $cf->{$param}) {
+		if (ref($cf->{$param}) eq 'ARRAY') {
+			print join ("\n", @{$cf->{$param}}) . "\n";
+		}
+		else {
+			print $cf->{$param} . "\n";
+		}
+		exit(0);
+	}
+	else {
+		exit(1);
+	}
+}
+elsif ($ARGV[0] eq 'list_conf') {
+	my $directory = $ARGV[1];
+	$directory = getcwd if (! defined $directory);
+	if (! -d $directory) {
+		print STDERR $directory ." not a directory\n";
+		exit(1);
+	}
+
+	my $cf = RAWMK::Config->new($directory);
+	
+	foreach my $param (sort keys %$cf) {
+		if (ref($cf->{$param}) eq 'ARRAY') {
+			print "$param=" . join(" ", @{$cf->{$param}}) . "\n";
+		}
+		else {
+			print "$param=" . $cf->{$param} . "\n";
+		}
+	}
+}
+elsif ($ARGV[0] eq 'add_stereo') {
+	shift @ARGV;
+	
+	my %opt;
+	GetOptions(\%opt,
+		'swap',
+		'both'
+	);
+	
+	my $add = RAWMK::Add->new(\%opt);
+	
+	$add->inputs(@ARGV);
+	$add->write_stereo_rmk()
+}
+elsif ($ARGV[0] eq 'add_sbs') {
+	shift @ARGV;
+	
+	my %opt;
+	
+	my $add = RAWMK::Add->new(\%opt);
+	
+	$add->inputs(@ARGV);
+	$add->write_sbs_rmk()
+}
+elsif ($ARGV[0] eq 'add_pano') {
+	shift @ARGV;
+	
+	my %opt = (
+		'prefix' => 'pano_'
+	);
+
+	GetOptions(\%opt,
+		'prefix=s'
+	);
+	
+	my $add = RAWMK::Add->new(\%opt);
+	
+	$add->inputs(@ARGV);
+	$add->write_pano_rmk()
+}
+elsif ($ARGV[0] eq 'sort') {
+	shift @ARGV;
+	
+	my %opt;
+	GetOptions(\%opt,
+	           'dest-pattern=s',
+        	   'action=s'
+	);
+	
+	my $sort = RAWMK::Sort->new(\%opt);
+
+	$sort->process();
+}
+
+exit 0;

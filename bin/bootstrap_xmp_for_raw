@@ -1,0 +1,9 @@
+#!/bin/sh
+# $1 raw
+# $2 output xmp
+
+if [ ! -f "$2" ]; then
+	exiftool -overwrite_original -TagsFromFile "$1" -DateTimeOriginal "$2"
+else
+	touch "$2"
+fi

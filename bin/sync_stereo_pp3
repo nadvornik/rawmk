@@ -1,0 +1,7 @@
+#!/bin/sh
+# $1 right pp3
+# $2 output left pp3
+# $3 left raw
+# $4 right raw
+
+sed -e 's|Rotate=0|Rotate=180|' "$1" > "$2"

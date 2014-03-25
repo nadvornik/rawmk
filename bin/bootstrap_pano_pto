@@ -1,0 +1,13 @@
+#!/bin/sh
+# $1 out pto
+# $2.. images
+set -x -e
+
+PTO=$1
+shift
+
+match-n-shift -o "$PTO" "$@"
+cpfind -n 4 --celeste --multirow -o "$PTO.tmp" "$PTO"
+autooptimiser -a -l -m -s "$PTO.tmp" -o "$PTO"
+rm "$PTO.tmp"
+

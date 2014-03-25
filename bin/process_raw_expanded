@@ -1,0 +1,16 @@
+#!/bin/sh
+# $1 raw
+# $2 pp3
+# $3 xmp
+# $4 output 16bit tif
+
+rawtherapee -p "$2" -o "tmp_$4" -Y -t -c "$1"
+exiftool -overwrite_original -tagsFromFile "$1" --Orientation -tagsFromFile "$3" --Orientation "tmp_$4"
+exiftool -overwrite_original -Orientation= "tmp_$4"
+
+# preserve timestamp of tif file, to avoid unnecessary rebuilds
+# timestamp of .tif.expanded is enough for correct updating
+test -f "$4" && touch -r "$4" "tmp_$4" 
+
+mv -f "tmp_$4" "$4" 
+touch "$4.expanded"
