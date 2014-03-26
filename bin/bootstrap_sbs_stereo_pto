@@ -14,7 +14,7 @@ system('convert', "$img", '-gravity', 'East', '-crop', '50x100%+0+0', '-blur', '
 system('convert', "$img", '-gravity', 'West', '-crop', '50x100%+0+0', '-blur', '2', "tmp_${img}_l.tif") == 0 or die "convert failed on left image";
 
 
-system('align_image_stack', '-v', '-t', '6','-p', $pto, '-x', '-s', '4', '-P', '-C', "tmp_${img}_r.tif", "tmp_${img}_l.tif") == 0 or die "align_image_stack failed";
+system('align_image_stack', '-v', '--corr=0.6', '-t', '6','-p', $pto, '-x', '-s', '4', '-P', '-C', "tmp_${img}_r.tif", "tmp_${img}_l.tif") == 0 or die "align_image_stack failed";
 
 system("cp", "$pto", "$pto.ok");
 
