@@ -154,8 +154,8 @@ touch timestamp
 make
 
 # result exists and is newly created, it is just pto file for now
-test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto
-test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -nt timestamp
+test -f 2014-01-28/img_4971_img_4972/img_4971_img_4972.pto
+test 2014-01-28/img_4971_img_4972/img_4971_img_4972.pto -nt timestamp
 
 # previously created files stay unchanged
 test 2014-01-28/img_4971_img_4972.jps -ot timestamp
@@ -171,11 +171,11 @@ echo " create pano image - part 2 - tiff output"
 echo "==================================================================="
 touch timestamp
 make
-test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif
-test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif -nt timestamp
+test -f 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif
+test 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif -nt timestamp
 
 # previously created files stay unchanged
-test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -ot timestamp
+test 2014-01-28/img_4971_img_4972/img_4971_img_4972.pto -ot timestamp
 test 2014-01-28/img_4971_img_4972.jps -ot timestamp
 test 2014-01-28/img_4972_img_4971.jps -ot timestamp
 test 2012-03-24/img_7977.jps -ot timestamp
@@ -247,7 +247,7 @@ make -j8
 
 
 # result exists and is newly created, it is just pto file for now
-test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto
+test -f 2014-01-28/img_4971_img_4972/img_4971_img_4972.pto
 test -f 2014-01-28/img_4971_img_4972.jps 
 test -f 2014-01-28/img_4972_img_4971.jps  
 test -f 2012-03-24/img_7977.jps
@@ -266,14 +266,14 @@ rm 2012-03-24/img_7977.pto # let the file autogenerate again
 
 touch timestamp
 make -j8
-test -f 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif
-test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.tif -nt timestamp
+test -f 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif
+test 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif -nt timestamp
 
 test 2012-03-24/img_7977.jps -nt timestamp
 test 2012-03-24/img_7977.jpg -nt timestamp
 
 # previously created files stay unchanged
-test 2014-01-28/pano_img_4971_img_4972/pano_4971_4972.pto -ot timestamp
+test 2014-01-28/img_4971_img_4972/img_4971_img_4972.pto -ot timestamp
 test 2014-01-28/img_4971_img_4972.jps -ot timestamp
 test 2014-01-28/img_4972_img_4971.jps -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp

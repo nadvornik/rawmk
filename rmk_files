@@ -1,0 +1,12 @@
+
+STEREO_PARALLEL
+STEREO_PARALLEL img_1234.cr2
+
+STEREO_PAIR
+STEREO_PAIR img_1234.cr2 img_1235.cr2
+
+PANO
+PANO img_1234.cr2 img_1235.cr2 img_1236.cr2 img_1237.cr2
+
+
+
