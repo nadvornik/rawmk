@@ -256,8 +256,8 @@ sub parse_img_pair
 	
 	$pair =~ s/\..*$//;
 	
-	if ($pair =~ /([a-zA-Z]+)[_-]([0-9]{4})_([0-9]{4})$/) {
-		return($1 . $2, $1 . $3);
+	if ($pair =~ /([a-zA-Z]+)_([0-9]{4})[_-]([0-9]{4})$/) {
+		return($1 . '_' . $2, $1 . '_' . $3);
 	}
 
 	if ($pair =~ /([a-zA-Z]+_?[0-9]*)[_-]([a-zA-Z]+_?[0-9]*)$/) {
@@ -340,6 +340,7 @@ sub add_pano_pto
 	push @{$self->{def_targets}}, @$targets;
 
 	$self->{files}{$pto}{PROCESSED} = 1;
+	$self->{pano_dir} = 1;
 
 }
 
@@ -605,13 +606,13 @@ sub add_default_raw_patterns
 		$self->add_rule(["%.tif", "%.tif.expanded"], ["%$raw", "%$raw.pp3", "%.xmp"], [$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.tif'"]);
 
 		# add rule for neutral 16bit tif
-		$self->add_rule(["%.neutral.tif", "%.neutral.tif.expanded"], ["%$raw", "%.xmp"], 
-			[$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", $self->{CONF}{PP3_NEUTRAL}, "'\$*.xmp'", "'\$*.neutral.tif'"]);
+		$self->add_rule(["%.neutral.tif", "%.neutral.tif.expanded"], ["%$raw", "%$raw.pp3", "%.xmp"], 
+			[$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.neutral.tif'", $self->{CONF}{PP3_NEUTRAL}]);
 
 		if ($self->{pano_dir}) {
 			# add rule for neutral 16bit tif, take raw files from parent directory
 			$self->add_rule(["%.neutral.tif", "%.neutral.tif.expanded"], ["../%$raw", "../%.xmp"], 
-				[$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'../\$*$raw'", $self->{CONF}{PP3_NEUTRAL}, "'../\$*.xmp'", "'\$*.neutral.tif'"]);
+				[$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'../\$*$raw'", "'../\$*$raw.pp3'", "'../\$*.xmp'", "'\$*.neutral.tif'", $self->{CONF}{PP3_NEUTRAL}]);
 		}
 	}
 	

@@ -4,6 +4,6 @@
 # $3 xmp
 # $4 output jpg
 
-rawtherapee -p "$2" -o "$4" -Y -c "$1"
+rawtherapee -p "$2" -o "$4" -Y -j85 -js1 -c "$1"
 exiftool -overwrite_original -tagsFromFile "$1" --Orientation -tagsFromFile "$3" --Orientation "$4"
 exiftool -overwrite_original -Orientation= "$4"

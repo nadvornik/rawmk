@@ -3,7 +3,10 @@
 # $2 left tif
 # $3 out pto
 
-align_image_stack --distortion -p "tmp_$3" -x -s 4 -P -C "$1" "$2"
-autooptimiser -m "tmp_$3" -o "$3"
-rm "tmp_$3"
+set -e -x 
+
+align_image_stack --distortion --corr=0.8 -p "tmp1_$3" -x -s 4 -P -C "$1" "$2" 
+pto_var --unlink Er1,Eb1 --modify-opt --opt Er1,Eb1,Eev1 "tmp1_$3" -o "tmp2_$3"
+vig_optimize "tmp2_$3" -o "$3" 
+rm "tmp1_$3" "tmp2_$3"
 

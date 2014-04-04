@@ -3,14 +3,22 @@
 # $2 pp3
 # $3 xmp
 # $4 output 16bit tif
+# $5 optional second pp3 applied after first one
 
-rawtherapee -p "$2" -o "tmp_$4" -Y -t -c "$1"
+set -x -e
+
+if [ -n "$5" ] ; then
+    rawtherapee -p "$2" -p "$5" -o "tmp_$4" -Y -t -c "$1"
+else
+    rawtherapee -p "$2" -o "tmp_$4" -Y -t -c "$1"
+fi
 exiftool -overwrite_original -tagsFromFile "$1" --Orientation -tagsFromFile "$3" --Orientation "tmp_$4"
 exiftool -overwrite_original -Orientation= "tmp_$4"
 
 # preserve timestamp of tif file, to avoid unnecessary rebuilds
 # timestamp of .tif.expanded is enough for correct updating
-test -f "$4" && touch -r "$4" "tmp_$4" 
+
+test -f "$4" && test "$4" -nt "$1" && test "$4" -nt "$2" && test "$4" -nt "$3" && touch -r "$4" "tmp_$4" 
 
 mv -f "tmp_$4" "$4" 
 touch "$4.expanded"

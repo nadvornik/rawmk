@@ -199,9 +199,6 @@ Orientation=Landscape
 Guide=Rule of thirds
 
 [Coarse Transformation]
-Rotate=0
-HorizontalFlip=false
-VerticalFlip=false
 
 [Common Properties for Transformations]
 AutoFill=true
@@ -315,5 +312,3 @@ PreBlacktwo=0
 PreBlackthree=0
 PreTwoGreen=true
 
-[Exif]
-GPSInfo=#delete
