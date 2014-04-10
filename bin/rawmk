@@ -731,6 +731,7 @@ sub inputs
 	my @files;
 	
 	foreach my $file (@_) {
+		$file =~ s/^file:\/\///;
 #		$file = File::Spec->abs2rel($file);
 		my($filename, $directory, $suffix) = fileparse($file, qr/\.[^.]*/);
 		
