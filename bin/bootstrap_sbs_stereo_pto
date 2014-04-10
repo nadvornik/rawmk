@@ -15,7 +15,7 @@ system('convert', "$img", '-gravity', 'West', '-crop', '50x100%+0+0', '-blur', '
 system('exiftool', '-overwrite_original', '-tagsFromFile', "$img", "tmp_${img}_r.tif");
 system('exiftool', '-overwrite_original', '-tagsFromFile', "$img", "tmp_${img}_l.tif");
 
-system('align_image_stack', '-v', '--corr=0.6', '-t', '6','-p', $pto, '-x', '-s', '4', '-P', '-C', "tmp_${img}_r.tif", "tmp_${img}_l.tif") == 0 or die "align_image_stack failed";
+system('align_image_stack', '-v', '--corr=0.6', '-t', '6','-p', $pto, '-x', '-s', '4', '-P', "tmp_${img}_r.tif", "tmp_${img}_l.tif") == 0 or die "align_image_stack failed";
 
 my $p = new Panotools::Script;
 
@@ -28,15 +28,15 @@ my $half_w = $p->Image->[0]{w};
 foreach my $i (@{$p->Image}) {
 	$i->{w} = $w;
 	$i->{n} = "\"$img\"";
-	$i->{v} = rad2deg(atan(tan(deg2rad($i->{v} / 2)) * 2)) * 2;
 }
 
-foreach my $par (qw(Eb Eev Er Ra Rb Rc Rd Re Va Vb Vc Vd Vx Vy a b c d e f g v t)) {
-	$p->Image->[1]{$par} = $p->Image->[0]{$par} if defined $p->Image->[0]{$par};
-}
+$p->Image->[0]{v} = rad2deg(atan(tan(deg2rad($p->Image->[0]{v} / 2)) * 2)) * 2;
 
-$p->Image->[0]{d} = $w / 4;
-$p->Image->[1]{d} = - $w / 4;
+$p->Image->[0]{TrX} = - tan(deg2rad($p->Image->[0]{v} / 2)) * 0.5;
+$p->Image->[0]{r} = - $p->Image->[1]{r} / 2.0;
+
+
+#$p->Image->[1]{TrX} = $p->Image->[1]{TrX} + tan(deg2rad($p->Image->[1]{v} / 2)) * 0.5;
 
 
 foreach my $pt (@{$p->Control}) {
@@ -46,7 +46,16 @@ foreach my $pt (@{$p->Control}) {
 
 $p->Option->{outputStacksMinOverlap} = 0.01;
 
+$p->Variable->{0}{b} = 1;
+
 $p->Write($pto);
+
+print STDERR "Optimizing again\n";
+system('autooptimiser', '-n', '-o', "$pto.tmp", $pto);
+system('pano_modify', '--crop=AUTOHDR', '-o', $pto, "$pto.tmp");
+
+
 
 unlink("tmp_${img}_r.tif");
 unlink("tmp_${img}_l.tif");
+unlink("$pto.tmp");
