@@ -107,6 +107,7 @@ sub initialize
 	$self->{makefile} = '';
 	
 	$self->{def_targets} = [];
+	$self->{geotag_targets} = [];
 	$self->{files} = {};
 	$self->{CONF} = RAWMK::Config->new($dir);
 	$self->{dir} = $self->{CONF}{BASEDIR};
@@ -115,7 +116,6 @@ sub initialize
 	
 }
 
-my @geotag_targets;
 
 sub add_rule
 {
@@ -146,6 +146,35 @@ sub add_rule
 		}
 		foreach my $string (@$cmd) {
 			$string =~ s/([ #\\])/\\$1/g;
+			$self->{makefile} .= "$string ";
+		}
+		$self->{makefile} .= "\n"
+	}
+	$self->{makefile} .= "\n"
+}
+
+sub add_rule_no_quote
+{
+	my $self = shift;
+	my $out = shift;
+	my $in = shift;
+	
+	foreach my $string (@$out) {
+		$self->{makefile} .= "$string ";
+	}
+
+	$self->{makefile} .= ": ";
+	foreach my $string (@$in) {
+		$self->{makefile} .= "$string ";
+	}
+
+	$self->{makefile} .= "\n";
+
+	while (my $cmd = shift) {
+		if (@$cmd > 0) {
+			$self->{makefile} .= "\t+";
+		}
+		foreach my $string (@$cmd) {
 			$self->{makefile} .= "$string ";
 		}
 		$self->{makefile} .= "\n"
@@ -517,8 +546,8 @@ sub proc_raw_lr
 			}
 			
 			# geotag xmp
-			push @geotag_targets, $l_xmp;
-			push @geotag_targets, $r_xmp;
+			push @{$self->{geotag_targets}}, $l_xmp;
+			push @{$self->{geotag_targets}}, $r_xmp;
 
 			# add default raw processor config (rawtherapee pp3 file) if missing
 			my $r_raw_pp3 = "$r_file.pp3";
@@ -553,7 +582,7 @@ sub proc_raw
 			}
 			
 			# geotag xmp
-			push @geotag_targets, $xmp;
+			push @{$self->{geotag_targets}}, $xmp;
 
 			# add default raw processor config (rawtherapee pp3 file) if missing
 			my $raw_pp3 = "$file.pp3";
@@ -593,6 +622,36 @@ sub proc_extra_pto
 	}
 }
 
+sub proc_geotag
+{
+	my ($self) = @_;
+	my @gpx;
+	my @gpx_opt;
+
+	foreach my $file (sort keys %{$self->{files}}) {
+		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".gpx");
+		if ($suffix) { 
+			push @gpx, $file;
+			push @gpx_opt, '-geotag', $file;
+		}
+	}
+	
+	if (@gpx) {
+		$self->add_rule(['.geotag'], [@gpx, @{$self->{geotag_targets}}], 
+		['exiftool', '$(GEOTAG_OPTS)', @gpx_opt, @{$self->{geotag_targets}}],
+		['for', 'file', 'in', @{$self->{geotag_targets}}, ';', 'do', 
+			'if', '[', '-f', '"$$file"_original', ']', ';', 'then',
+				'if', 'diff', '-q', '"$$file"', '"$$file"_original', '>/dev/null', ';', 'then', 'touch', '-r', '"$$file"_original', '"$$file"', ';', 'fi', ';',
+				'rm', '"$$file"_original', ';',
+			'fi', ';',
+		'done'],
+		['touch', '.geotag']);
+	} 
+	else {
+		$self->add_rule(['.geotag'], [@{$self->{geotag_targets}}], ['touch', '.geotag']);
+	}
+}
+
 sub add_default_raw_patterns
 {
 	my ($self) = @_;
@@ -600,13 +659,13 @@ sub add_default_raw_patterns
 	for my $raw (@{$self->{CONF}{EXT_RAW}}) {
 	
 		# add rule for jpg
-		$self->add_rule(["%.jpg"], ["%$raw", "%$raw.pp3", "%.xmp"], [$self->{CONF}{S_PROCESS_RAW}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.jpg'"]);
+		$self->add_rule_no_quote(["%.jpg"], ["%$raw", "%$raw.pp3", "%.xmp", '|', '.geotag'], [$self->{CONF}{S_PROCESS_RAW}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.jpg'"]);
 
 		# add rule for 16bit tif
-		$self->add_rule(["%.tif", "%.tif.expanded"], ["%$raw", "%$raw.pp3", "%.xmp"], [$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.tif'"]);
+		$self->add_rule_no_quote(["%.tif", "%.tif.expanded"], ["%$raw", "%$raw.pp3", "%.xmp", '|', '.geotag'], [$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.tif'"]);
 
 		# add rule for neutral 16bit tif
-		$self->add_rule(["%.neutral.tif", "%.neutral.tif.expanded"], ["%$raw", "%$raw.pp3", "%.xmp"], 
+		$self->add_rule_no_quote(["%.neutral.tif", "%.neutral.tif.expanded"], ["%$raw", "%$raw.pp3", "%.xmp", '|', '.geotag'], 
 			[$self->{CONF}{S_PROCESS_RAW_EXPANDED}, "'\$*$raw'", "'\$*$raw.pp3'", "'\$*.xmp'", "'\$*.neutral.tif'", $self->{CONF}{PP3_NEUTRAL}]);
 
 		if ($self->{pano_dir}) {
@@ -625,15 +684,17 @@ sub add_default_raw_patterns
 sub proc_subdirs
 {
 	my ($self) = @_;
-	my @rec;
+	my @rec1;
+	my @rec2;
 	
 	foreach my $file (sort keys %{$self->{files}}) {
 		if (-d $self->{files}{$file}{PATH}) {
-			push @rec, ['test', '-f', "$file/Makefile", '||', $self->{CONF}{S_RAWMK}, 'makefile', "$file" ];
-			push @rec, ['$(MAKE)', '-C', "$file"];
+			push @rec1, ['test', '-f', "$file/Makefile", '||', $self->{CONF}{S_RAWMK}, 'makefile', "$file" ];
+			push @rec2, ['$(MAKE)', '-C', "$file"];
 		}
 	}
-	$self->add_rule(["SUBDIRS"], [], @rec);
+	$self->add_rule(["INITSUBDIRS"], [], @rec1);
+	$self->add_rule(["SUBDIRS"], [], @rec2);
 }
 
 
@@ -652,13 +713,40 @@ sub add_collapse_rules
 	$self->add_rule(["clean"], \@collapse);
 }
 
+sub add_includes
+{
+	my ($self) = @_;
+
+	foreach my $file (sort keys %{$self->{files}}) {
+		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".make");
+		if ($suffix) {
+			$self->{makefile} .= "include $file\n";
+		}
+	}
+}
+
 sub add_heading_rules
 {
 	my ($self) = @_;
 
-	$self->add_rule(['all'], ['outputs'], ['$(MAKE)', "clean"], ['$(MAKE)', "SUBDIRS"]);
-	$self->add_rule(['.SECONDARY'], []);
-	$self->add_rule(['Makefile'], ['$(shell', $self->{CONF}{S_RAWMK},  'check_makefile', '.', ')'], ['mv', '-f', '$<', '$@']);
+	$self->{makefile} .= "
+# this is Makefile generated by rawmk
+# do not edit
+
+all: INITSUBDIRS OUTPUTS
+	\$(MAKE) clean
+	\$(MAKE) SUBDIRS
+
+#all targets are secondary
+.SECONDARY:
+
+#regenerate makefile
+Makefile: \$(shell $self->{CONF}{S_RAWMK} check_makefile . )
+	mv -f  '\$<' '\$\@'
+
+.PHONY: INITSUBDIRS OUTPUTS SUBDIRS
+
+";
 }
 
 sub process
@@ -669,6 +757,8 @@ sub process
 	$self->read_filelist();
 
 	$self->add_heading_rules;
+	
+	$self->add_includes;
 
 	$self->proc_rmk();
 	
@@ -681,9 +771,11 @@ sub process
 	
 	$self->proc_extra_pto(); # this must be called after handling all known pto files
 	
+	$self->proc_geotag(); #this must be called after handling all known xmp files
+	
 	$self->add_default_raw_patterns();
 
-	$self->add_rule(['outputs'], \@{$self->{def_targets}});
+	$self->add_rule(['OUTPUTS'], \@{$self->{def_targets}});
 
 	$self->add_collapse_rules();
 

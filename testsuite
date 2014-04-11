@@ -55,13 +55,16 @@ test -f 2014-01-28/img_4972.cr2
 test -f 2014-01-28/img_1507r.cr2
 test -f 2014-01-28/img_1507l.cr2
 
+
+cp ../../test_data/test.gpx 2014-01-28
+echo 'GEOTAG_OPTS = '"'"'-geotime<$${DateTimeOriginal}-03:00'"'" > 2014-01-28/geotag.make
+
 echo "==================================================================="
 echo " get default result"
 echo "==================================================================="
 
 #call make - get default results
 make
-
 
 #check default results
 test -f 2012-03-24/img_7977.jpg
@@ -233,6 +236,9 @@ test -f 2014-01-28/img_4972.cr2
 #stereo L R images are paired
 test -f 2014-01-28/img_1507r.cr2
 test -f 2014-01-28/img_1507l.cr2
+
+cp ../../test_data/test.gpx 2014-01-28
+echo 'GEOTAG_OPTS = '"'"'-geotime<$${DateTimeOriginal}-03:00'"'" > 2014-01-28/geotag.make
 
 echo "==================================================================="
 echo " mark sbs stereo, independent stereo and pano and run make"
