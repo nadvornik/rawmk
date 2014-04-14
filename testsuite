@@ -152,7 +152,7 @@ test 2014-01-28/img_1507.jps -ot timestamp
 echo "==================================================================="
 echo " create pano image - pto first"
 echo "==================================================================="
-rawmk add_pano 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
+rawmk add_pano --dir 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 touch timestamp
 make
 
@@ -246,7 +246,7 @@ echo "==================================================================="
 
 rawmk add_sbs 2012-03-24/img_7977.cr2
 rawmk add_stereo --both 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
-rawmk add_pano 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
+rawmk add_pano --dir 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 
 touch timestamp
 make -j8

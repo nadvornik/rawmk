@@ -943,11 +943,13 @@ sub write_pano_rmk
 		exit 1;
 	}
 	
-	my $dir = $self->{directory} . '/' . $self->{prefix} . $self->{files}[0]{FILENAME} . '_' . $self->{files}[-1]{FILENAME};
+	if ($self->{dir}) {
+		my $dir = $self->{directory} . '/' . $self->{prefix} . $self->{files}[0]{FILENAME} . '_' . $self->{files}[-1]{FILENAME};
 
-	unless (mkdir($dir) && chdir($dir)) {
-		print STDERR "can't create dir: $dir\n";
-		exit 1;
+		unless (mkdir($dir) && chdir($dir)) {
+			print STDERR "can't create dir: $dir\n";
+			exit 1;
+		}
 	}
 
 	my $rmk = $self->{prefix} . $self->{files}[0]{FILENAME} . '_' . $self->{files}[-1]{FILENAME} . ".rmk";
@@ -1456,11 +1458,13 @@ elsif ($ARGV[0] eq 'add_pano') {
 	shift @ARGV;
 	
 	my %opt = (
-		'prefix' => ''
+		'prefix' => '',
+		'dir' => 0
 	);
 
 	GetOptions(\%opt,
-		'prefix=s'
+		'prefix=s',
+		'dir'
 	);
 	
 	my $add = RAWMK::Add->new(\%opt);
