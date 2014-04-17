@@ -8,8 +8,8 @@ if [ -z "$MAKE" ] ; then
 fi
 
 pto2mk -o "$1.mk" -p "$PREFIX" "$1"
-$MAKE -f "$1.mk" all
-$MAKE -f "$1.mk" clean
+$MAKE -e -f "$1.mk" all
+$MAKE -e -f "$1.mk" clean
 
 shift
 touch "$@"
