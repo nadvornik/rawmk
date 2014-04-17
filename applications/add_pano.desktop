@@ -1,0 +1,19 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Create panorama
+
+Exec=rawmk add_pano %U
+
+# Desktop files that are usable only in Geeqie should be marked like this:
+Categories=X-Geeqie;
+OnlyShowIn=X-Geeqie;
+
+# Show in menu "Edit"
+X-Geeqie-Menu-Path=EditMenu/EditSection
+
+# It can be made verbose
+X-Geeqie-Verbose=true
+
+MimeType=image/x-dcraw;image/jpeg;image/png;image/tiff;
+
