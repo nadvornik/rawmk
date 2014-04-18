@@ -23,3 +23,6 @@ exiftool
 Usage:
 
 For now the only documentation is the testsuite file
+
+License:        
+GNU General Public License version 2 or later (GPL v2 or later)

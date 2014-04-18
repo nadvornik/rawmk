@@ -1,6 +1,12 @@
 #!/bin/sh
 
-install -m 755 bin/* /usr/bin
+mkdir -p template/collection
+mkdir -p template/download
+mkdir -p template/L
+mkdir -p template/R
 
-mkdir -p /usr/share/rawmk
-cp -r template /usr/share/rawmk
+mkdir -p $DESTDIR/usr/bin 
+install -m 755 bin/* $DESTDIR/usr/bin
+
+mkdir -p $DESTDIR/usr/share/rawmk
+cp -r template $DESTDIR/usr/share/rawmk
