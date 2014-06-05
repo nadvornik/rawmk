@@ -610,7 +610,7 @@ sub proc_tif_pp3
 	foreach my $file (sort keys %{$self->{files}}) {
 		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".tif.pp3");
 		if ($suffix) {
-			push @{$self->{def_targets}}, "$name.jpg";
+			unshift @{$self->{def_targets}}, "$name.jpg";
 		}
 	}
 }
@@ -741,7 +741,7 @@ sub add_heading_rules
 # environment variables defined in config file:
 ";
 
-	foreach my $e (keys %{$self->{CONF}{ENV}}) {
+	foreach my $e (sort keys %{$self->{CONF}{ENV}}) {
 		$self->{makefile} .= "export $e = " . $self->{CONF}{ENV}{$e} . "\n";
 	}
 
@@ -755,6 +755,7 @@ all: INITSUBDIRS OUTPUTS
 
 #regenerate makefile
 Makefile: \$(shell $self->{CONF}{S_RAWMK} check_makefile . )
+	diff -u  '\$<' '\$\@' || true
 	mv -f  '\$<' '\$\@'
 
 .PHONY: INITSUBDIRS OUTPUTS SUBDIRS
