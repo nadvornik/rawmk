@@ -660,6 +660,9 @@ sub proc_geotag
 sub add_default_raw_patterns
 {
 	my ($self) = @_;
+
+	# add rule for converting 16bit tif to jpg with rawtherapee
+	$self->add_rule(["%.jpg"], ["%.tif", "%.tif.expanded", "%.tif.pp3"], [$self->{CONF}{S_PROCESS_TIF}, "'\$*.tif'", "'\$*.tif.pp3'", "'\$*.jpg'"]);
 	
 	for my $raw (@{$self->{CONF}{EXT_RAW}}) {
 	
@@ -680,8 +683,6 @@ sub add_default_raw_patterns
 		}
 	}
 	
-	# add rule for converting 16bit tif to jpg with rawtherapee
-	$self->add_rule(["%.jpg"], ["%.tif", "%.tif.expanded", "%.tif.pp3"], [$self->{CONF}{S_PROCESS_TIF}, "'\$*.tif'", "'\$*.tif.pp3'", "'\$*.jpg'"]);
 	
 }
 

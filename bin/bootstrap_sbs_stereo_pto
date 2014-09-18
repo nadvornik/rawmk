@@ -52,7 +52,7 @@ $p->Write($pto);
 
 print STDERR "Optimizing again\n";
 system('autooptimiser', '-n', '-o', "$pto.tmp", $pto);
-system('pano_modify', '--crop=AUTOHDR', '-o', $pto, "$pto.tmp");
+system('pano_modify', '--crop=AUTOHDR', '--output-exposure=AUTO', '-o', $pto, "$pto.tmp");
 
 
 
