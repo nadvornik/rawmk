@@ -1,7 +1,70 @@
-#!/bin/sh
-# $1 right pp3
-# $2 output left pp3
-# $3 left raw
-# $4 right raw
+#!/usr/bin/perl
+# $1 src pp3
+# $2 output dest pp3
+# $3 dest raw
+# $4 src raw
 
-sed -e 's|Rotate=0|Rotate=180|' "$1" > "$2"
+my %right_rot = (
+    'Horizontal (normal)' => 0,
+    );
+
+my %left_rot = (
+    'Horizontal (normal)' => 180,
+    );
+
+use Image::ExifTool qw(:Public);
+
+my $destExif = ImageInfo($ARGV[2]);
+my $srcExif = ImageInfo($ARGV[3]);
+
+my $lv_diff = 0;
+if (defined $destExif->{LightValue} &&
+    defined $srcExif->{LightValue}) {
+    $lv_diff = $destExif->{LightValue} - $srcExif->{LightValue};
+}
+
+open my $infile, '<' . $ARGV[0] or die "no input pp3 file";
+open my $outfile, '>' . $ARGV[1] or die "can't open output pp3 file";
+my $section = '';
+while (my $line =  <$infile>) {
+        chomp $line;
+	if ($line =~ /^\[(.*)\]/) {
+	    $section = $1;
+	}
+	
+	if ($section eq 'Exposure') {
+	    if ($line =~ /^Auto=/) {
+	        $line = 'Auto=false';
+	    }
+	    elsif ($line =~ /^Compensation=([0-9.]*)/) {
+	        $line = 'Compensation=' . ($1 + $lv_diff);
+	    }
+	}
+	
+	if ($section eq 'Coarse Transformation') {
+	    if ($line =~ /^Rotate=/) {
+	        if ($ARGV[2] = /l\./) {
+	            if (defined $left_rot{$destExif->{Orientation}}) {
+	                $line = 'Rotate=' . $left_rot{$destExif->{Orientation}};
+	            }
+	        }
+	        else {
+	            if (defined $right_rot{$destExif->{Orientation}}) {
+	                $line = 'Rotate=' . $left_rot{$destExif->{Orientation}};
+	            }
+	        }
+	    }
+	}
+	
+	print $outfile "$line\n";
+}
+
+close $outfile;
+close $infile;
+
+
+
+#use Data::Dumper;
+#print Dumper($destExif, $srcExif, $lv_diff);
+
+#sed -e 's|Rotate=0|Rotate=180|' "$1" > "$2"
