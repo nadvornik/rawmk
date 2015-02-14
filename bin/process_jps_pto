@@ -10,7 +10,7 @@ set -e -x
 
 eval RIGHT=`ptoget -i 0:n "$1"`
 
-vig_optimize "$1" -o "tmp_$1" && mv -f "tmp_$1" "$1"
+vig_optimize -s4 -p10000 -v "$1" -o "tmp_$1" && mv -f "tmp_$1" "$1"
 
 pto2mk -o "$1.mk" -p "$PREFIX"_ "$1"
 $MAKE -e -f "$1.mk" "$PREFIX"__exposure_layers_0001.tif "$PREFIX"__exposure_layers_0000.tif
