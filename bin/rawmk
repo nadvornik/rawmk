@@ -693,7 +693,7 @@ sub proc_subdirs
 	my @rec1;
 	my @rec2;
 	
-	foreach my $file (sort keys %{$self->{files}}) {
+	foreach my $file (reverse sort keys %{$self->{files}}) {
 		if (-d $self->{files}{$file}{PATH}) {
 			push @rec1, ['test', '-f', "$file/Makefile", '||', $self->{CONF}{S_RAWMK}, 'makefile', "$file" ];
 			push @rec2, ['$(MAKE)', '-C', "$file"];
@@ -884,21 +884,21 @@ sub inputs
 
 sub write_stereo_rmk_single
 {
-	my ($self) = @_;
+	my ($self, $i, $j) = @_;
 
-	my $rmk = $self->{directory} . '/' . $self->{files}[0]{FILENAME} . '_' . $self->{files}[1]{FILENAME} . ".rmk";
+	my $rmk = $self->{directory} . '/' . $self->{files}[$i]{FILENAME} . '_' . $self->{files}[$j]{FILENAME} . ".rmk";
 
 	if (-f $rmk) {
 		print STDERR "file $rmk already exists\n";
-		exit 1;
+		return;
 	}
 
 	open(my $fh, '>', $rmk);
 	if ($self->{class} eq 'RAW') {
-		print $fh 'STEREO_PAIR ' . $self->{files}[0]{FILENAME} . '.tif' . ' ' . $self->{files}[1]{FILENAME} . '.tif' . "\n";
+		print $fh 'STEREO_PAIR ' . $self->{files}[$i]{FILENAME} . '.tif' . ' ' . $self->{files}[$j]{FILENAME} . '.tif' . "\n";
 	}
 	else {
-		print $fh 'STEREO_PAIR ' . $self->{files}[0]{FILENAME} . $self->{files}[0]{SUFFIX} . ' ' . $self->{files}[1]{FILENAME} . $self->{files}[1]{SUFFIX} . "\n";
+		print $fh 'STEREO_PAIR ' . $self->{files}[$i]{FILENAME} . $self->{files}[$i]{SUFFIX} . ' ' . $self->{files}[$j]{FILENAME} . $self->{files}[$j]{SUFFIX} . "\n";
 	}
 	close($fh);
 }
@@ -906,22 +906,29 @@ sub write_stereo_rmk_single
 sub write_stereo_rmk
 {
 	my ($self) = @_;
+	
+	my $n = @{$self->{files}};
 
-	if (@{$self->{files}} != 2) {
-		print STDERR "2 files required\n";
+	if ($n < 2) {
+		print STDERR "at least 2 files required\n";
 		exit 1;
 	}
 	
 
 	if (!$self->{swap}) {
-		$self->write_stereo_rmk_single();
+		for (my $i = 0; $i < $n - 1; $i++) {
+			for (my $j = $i + 1; $j < $n; $j++) {
+				$self->write_stereo_rmk_single($i, $j);
+			}
+		}
 	}
 
 	if ($self->{swap} || $self->{both}) {
-		my $tmp = $self->{files}[0];
-		$self->{files}[0] = $self->{files}[1];
-		$self->{files}[1] = $tmp;
-		$self->write_stereo_rmk_single();
+		for (my $i = 0; $i < $n - 1; $i++) {
+			for (my $j = $i + 1; $j < $n; $j++) {
+				$self->write_stereo_rmk_single($j, $i);
+			}
+		}
 	}
 }
 
