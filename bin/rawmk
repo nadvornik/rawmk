@@ -241,13 +241,17 @@ sub pto_parse
 	my @out;
 	my $p = new Panotools::Script;
 	$p->Read ($pto);
+	my $n_img = 0;
 	foreach my $i (@{$p->Image}) {
+		next if exists $p->ImageMetadata->[$n_img]->{disabled};
 		my $name = $i->n;
 		$name =~ s/^"(.*)"$/$1/;
 		push @req, $name;
+		$n_img++;
 	}
+
 	my ($path_prefix) = basename($pto, ".pto");
-	
+
 	push @out, $path_prefix .'.'. ($p->Option->{outputImageType} || 'tif') 
 		if $p->Option->{outputLDRBlended} =~ /true/;
 	push @out, $path_prefix .'_fused.'. ($p->Option->{outputImageType} || 'tif')
@@ -256,7 +260,19 @@ sub pto_parse
 		if $p->Option->{outputLDRExposureLayersFused} =~ /true/;
 	push @out, $path_prefix .'_hdr.'. ($p->Option->{outputImageTypeHDR} || 'exr')
 		if $p->Option->{outputHDRBlended} =~ /true/;
-	
+
+	if ($p->Option->{outputLDRLayers} =~ /true/) {
+		for (my $i = 0; $i < $n_img; $i++) {
+			push @out, sprintf "%s%04d.%s", $path_prefix, $i, ($p->Option->{outputImageType} || 'tif');
+		}
+	}
+
+	if ($p->Option->{outputLDRExposureRemapped} =~ /true/) {
+		for (my $i = 0; $i < $n_img; $i++) {
+			push @out, sprintf "%s_exposure_layers_%04d.%s", $path_prefix, $i, ($p->Option->{outputImageType} || 'tif');
+		}
+	}
+
 	return (\@req, \@out);
 }
 
