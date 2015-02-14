@@ -6,10 +6,14 @@
 
 my %right_rot = (
     'Horizontal (normal)' => 0,
+    'Rotate 90 CW' => 270,
+    'Rotate 270 CW' => 90,
     );
 
 my %left_rot = (
     'Horizontal (normal)' => 180,
+    'Rotate 90 CW' => 90,
+    'Rotate 270 CW' => 270,
     );
 
 use Image::ExifTool qw(:Public);
@@ -22,6 +26,9 @@ if (defined $destExif->{LightValue} &&
     defined $srcExif->{LightValue}) {
     $lv_diff = $destExif->{LightValue} - $srcExif->{LightValue};
 }
+
+
+my $flatfield = 0;
 
 open my $infile, '<' . $ARGV[0] or die "no input pp3 file";
 open my $outfile, '>' . $ARGV[1] or die "can't open output pp3 file";
@@ -36,14 +43,15 @@ while (my $line =  <$infile>) {
 	    if ($line =~ /^Auto=/) {
 	        $line = 'Auto=false';
 	    }
-	    elsif ($line =~ /^Compensation=([0-9.]*)/) {
+	    elsif ($line =~ /^Compensation=([-0-9.]*)/) {
 	        $line = 'Compensation=' . ($1 + $lv_diff);
+	        print STDERR "orig $1 comp $lv_diff\n";
 	    }
 	}
 	
 	if ($section eq 'Coarse Transformation') {
 	    if ($line =~ /^Rotate=/) {
-	        if ($ARGV[2] = /l\./) {
+	        if ($ARGV[2] =~ /l\./) {
 	            if (defined $left_rot{$destExif->{Orientation}}) {
 	                $line = 'Rotate=' . $left_rot{$destExif->{Orientation}};
 	            }
@@ -56,13 +64,24 @@ while (my $line =  <$infile>) {
 	    }
 	}
 	
+	if ($section eq 'RAW') {
+	    if ($line =~ /^FlatFieldFile=[^ ]/) {
+	        $flatfield = 1;
+	    }
+	}
+	
 	print $outfile "$line\n";
 }
 
 close $outfile;
 close $infile;
 
-
+if ($flatfield) {
+    my $CONF=`rawmk get_conf CONFDIR`;
+    chomp $CONF;
+    print STDERR "select_df_ff pp3 $CONF/darkframe_l $CONF/flatfield_l $ARGV[2] $ARGV[1]\n";
+    system('select_df_ff',  'pp3', "$CONF/darkframe_l", "$CONF/flatfield_l", $ARGV[2], $ARGV[1]);
+}
 
 #use Data::Dumper;
 #print Dumper($destExif, $srcExif, $lv_diff);

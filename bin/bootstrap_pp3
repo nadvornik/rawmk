@@ -3,9 +3,12 @@
 # $2 output pp3
 
 PP3=`rawmk get_conf PP3_DEFAULT`
+CONF=`rawmk get_conf CONFDIR`
 
 if [ ! -f "$2" ]; then
 	cp "$PP3" "$2"
 else
 	touch "$2"
 fi
+
+select_df_ff pp3 "$CONF/darkframe" "$CONF/flatfield" "$1" "$2"

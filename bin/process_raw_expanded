@@ -7,6 +7,19 @@
 
 set -x -e
 
+#if grep -q '^FlatFieldFile=[^ ]' "$2" ; then
+#    CONF=`rawmk get_conf CONFDIR`
+#    cp -p "$2" "tmp_$2"
+#    
+#    if echo "$1" |grep 'l.[^.]*$' ; then
+#        select_df_ff pp3 "$CONF/darkframe_l" "$CONF/flatfield_l" "$1" "$2"
+#    else
+#        select_df_ff pp3 "$CONF/darkframe" "$CONF/flatfield" "$1" "$2"
+#    fi
+#    touch -r "tmp_$2" "$2"
+#    rm "tmp_$2"
+#fi
+
 if [ -n "$5" ] ; then
     rawtherapee -p "$2" -p "$5" -o "tmp_$4" -Y -t -c "$1"
 else

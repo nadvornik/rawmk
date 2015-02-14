@@ -1,0 +1,208 @@
+#!/usr/bin/perl
+
+use strict;
+use Image::ExifTool qw(:Public);
+use File::Find;
+use Cwd 'abs_path';
+use Data::Dump qw(dump);
+
+my $exiftool = new Image::ExifTool;
+$exiftool->Options(
+                   List => 1, 
+                   DateFormat => '%s', 
+                   StrictDate => 1);
+
+sub get_hash
+{
+    my ($exif) = @_;
+    
+    my %h;
+
+    my $date = $exif->{'DateTimeOriginal'};
+    $date = $exif->{'CreateDate'} unless defined $date; #mov files
+    
+
+    for my $tag (qw/Make Model SerialNumber OwnerName Lens FocalLength FNumber ISO ExposureTime/) {
+        $h{$tag} = $exif->{$tag};
+    }
+    
+    $h{'Date'} = $date;
+    
+    return \%h;
+}
+
+sub scan_dir
+{
+	my ($dir) = @_;
+	my @list;
+	my $wanted = sub
+	{
+		my $path = $File::Find::name;
+
+		next if -d $path;
+
+		my $exif = $exiftool->ImageInfo($path);
+	
+		next unless $exif->{'Model'};
+		
+		my $h = get_hash($exif);
+		
+		$h->{'path'} = $path;
+		
+		push @list, $h;
+	};
+
+	find($wanted, abs_path($dir));
+	
+	return \@list
+}
+
+sub get_val
+{
+    my ($s) = @_;
+    $s =~ s/ .*$//;
+    return eval $s;
+}
+
+sub find_close
+{
+    my ($list, $hash, $exact, $logdif, $dif) = @_;
+    my @c;
+    
+    for my $h (@{$list}) {
+        my $match = 1;
+        for my $tag (@{$exact}) {
+            if ($h->{$tag} ne $hash->{$tag}) {
+                $match = 0;
+                last;
+            }
+        }
+        push @c, $h if $match;
+    }
+    
+    @c = sort {
+        my $av = 0;
+        my $bv = 0;
+        for my $tag (@{$logdif}) {
+            my $ta = get_val($a->{$tag});
+            my $tb = get_val($b->{$tag});
+            my $tref = get_val($hash->{$tag});
+            
+            $av += abs(log($ta) - log($tref));
+            $bv += abs(log($tb) - log($tref));
+        }
+        
+        my $ret = $av <=> $bv;
+
+        for my $tag (@{$dif}) {
+            last if $ret != 0;
+            my $ta = get_val($a->{$tag});
+            my $tb = get_val($b->{$tag});
+            my $tref = get_val($hash->{$tag});
+            
+            $ret = (abs($ta - $tref)) <=> (abs($tb - $tref));
+        }
+        return $ret;
+    } @c;
+    
+#    dd \@c;
+    return $c[0];
+}
+
+if ($ARGV[0] eq 'scan') {
+    my $list = scan_dir($ARGV[1]);
+    dd $list;
+}
+elsif ($ARGV[0] eq 'flatfield') {
+    my $list = do $ARGV[1];
+    if (my $error = $@) {
+        die "Error in data file: $error\n";
+    }
+    my $exif = $exiftool->ImageInfo($ARGV[2]);
+    my $h = get_hash($exif);
+
+    my $c = find_close($list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName', 'Lens'], ['FocalLength', 'FNumber' ], ['Date']);
+    
+    if ($c->{path}) {
+        print $c->{path}, "\n";
+        exit 0;
+    }
+    else {
+        print STDERR "not found\n";
+        exit 1;
+    }
+}
+
+elsif ($ARGV[0] eq 'darkframe') {
+    my $list = do $ARGV[1];
+    if (my $error = $@) {
+        die "Error in data file: $error\n";
+    }
+    my $exif = $exiftool->ImageInfo($ARGV[2]);
+    my $h = get_hash($exif);
+
+    my $c = find_close($list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName'], ['ISO', 'ExposureTime' ], ['Date']);
+    
+    if ($c->{path}) {
+        print $c->{path}, "\n";
+        exit 0;
+    }
+    else {
+        print STDERR "not found\n";
+        exit 1;
+    }
+}
+
+elsif ($ARGV[0] eq 'pp3') {
+    my $df_list = do $ARGV[1];
+    if (my $error = $@) {
+        die "Error in data file: $error\n";
+    }
+    my $ff_list = do $ARGV[2];
+    if (my $error = $@) {
+        die "Error in data file: $error\n";
+    }
+    my $exif = $exiftool->ImageInfo($ARGV[3]);
+    my $h = get_hash($exif);
+
+    my $ff = find_close($ff_list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName', 'Lens'], ['FocalLength', 'FNumber' ], ['Date']);
+    my $df = find_close($df_list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName'], ['ISO', 'ExposureTime' ], ['Date']);
+
+    print STDERR dump($h);
+    print STDERR dump($ff);
+
+    if (-f $ARGV[4]) {
+        open(my $fh, "<", $ARGV[4]) or die "cannot open < " . $ARGV[4] . ": $!";
+        my @lines = <$fh>;
+        close($fh);
+        
+        open($fh, ">", $ARGV[4]) or die "cannot open > " . $ARGV[4] . ": $!";
+        for my $line (@lines) {
+            if ($ff->{path}) {
+#                print STDERR "FlatField: $ff->{path}\n";
+                $line =~ s|^FlatFieldFile=.*|FlatFieldFile=$ff->{path}| ;
+                $line =~ s|^FlatFieldAutoSelect=.*|FlatFieldAutoSelect=false| ;
+            }
+            if ($df->{path}) {
+#                print STDERR "DarkFrame: $df->{path}\n";
+                $line =~ s|^DarkFrame=.*|DarkFrame=$df->{path}| ;
+                $line =~ s|^DarkFrameAutoSelect=.*|DarkFrameAutoSelect=false| ;
+            }
+            print $fh $line;
+        }
+        close($fh);
+    }
+    else {
+        print "[RAW]\n";
+    
+        if ($ff->{path}) {
+            print "FlatFieldFile=" . $ff->{path}, "\n";
+        }
+        if ($df->{path}) {
+            print "DarkFrame=" . $df->{path}, "\n";
+        }
+        exit 0;
+    }
+}
+
+
