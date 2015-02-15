@@ -1,0 +1,93 @@
+#!/usr/bin/perl
+# create a pto file that remaps final panorama output back to one of input images
+# works only with ideal lenses, distortions are not supported
+# $1 in tif
+# $2 in pto
+# $3 n_img
+# $4 out pto
+
+
+use strict;
+use Panotools::Script;
+use Image::Size;
+use Math::Trig;
+use Data::Dumper;
+
+my %projection = (
+	0 => 0, # rectilinear (normal lenses)
+	3 => 3, # full-frame fisheye
+	2 => 4, # PSphere, equirectangular
+	14 => 8, # Orthographic fisheye
+	4 => 10, # Stereographic fisheye
+	15 => 21, # Equisolid fisheye
+	);
+
+my $img = $ARGV[0];
+my $pto = $ARGV[1];
+my $n = $ARGV[2];
+my $out_pto = $ARGV[3];
+my $p_in = new Panotools::Script;
+my $p_out = new Panotools::Script;
+$p_in->Read($pto);
+
+my $p = $p_in->Panorama;
+my $i = $p_in->Image->[$n];
+
+die "unsupported projection" unless defined $projection{$p->{f}};
+
+$p_out->Image->[0] = new Panotools::Script::Line::Image;
+$p_out->Image->[0]->Set(w => $p->{w},
+                        h => $p->{h},
+                        v => $p->{v},
+                        f => $projection{$p->{f}},
+                        n => $img,
+                        
+                        );
+
+$p_out->Image->[1] = new Panotools::Script::Line::Image;
+$p_out->Image->[1]->Set(w => $i->{w},
+                        h => $i->{h},
+                        f => $i->{f},
+                        v => $i->{v},
+                        n => $i->n,
+
+                        y => $i->{y},
+                        p => $i->{p},
+                        r => $i->{r},
+                        
+                        );
+
+if (0) {
+	$p_in->InitTrafo ($pto);
+        for (my $X = 10; $X < $i->{w} - 10; $X += 200) {
+            	for (my $Y = 10; $Y < $i->{h} - 10; $Y += 200) {
+                	my ($x, $y) = $p_in->Trafo ($n, $X, $Y);
+               
+                	next if $x < 0 || $y < 0 || $x >= $p->{w} || $y >= $p->{h};
+                
+                	my $cp = new Panotools::Script::Line::Control;
+                	$cp->Set(n => 0, N => 1, x => $x, y => $y, X => $X, Y => $Y, t => 0);
+                	push @{$p_out->Control}, $cp;
+		}
+        }
+}
+
+$p_out->Transform ( 0, 0, - $i->{y});
+$p_out->Transform ( 0, - $i->{p}, 0);
+$p_out->Transform ( - $i->{r}, 0, 0);
+
+$p_out->{panorama}->Set(w => $i->{w},
+                        h => $i->{h},
+                        f => 0,
+                        v => $i->{v},
+                        E => 0,
+                        n => '"TIFF_m c:LZW"');
+
+
+$p_out->Write($out_pto);
+
+
+
+
+
+
