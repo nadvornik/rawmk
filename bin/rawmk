@@ -243,10 +243,16 @@ sub pto_parse
 	$p->Read ($pto);
 	my $n_img = 0;
 	foreach my $i (@{$p->Image}) {
-		next if exists $p->ImageMetadata->[$n_img]->{disabled};
+		my $disabled = exists $p->ImageMetadata->[$n_img]->{disabled};
 		my $name = $i->n;
 		$name =~ s/^"(.*)"$/$1/;
-		push @req, $name;
+		my ($bname,$path) = fileparse($name);
+		$path =~ s/\/$//;
+		if ($path && $path ne "." && $path ne $self->{dir}) {
+			print STDERR "absolute path in pto: '$path' '$self->{dir}'\n";
+			$bname = $name;
+		}
+		push @req, $bname unless $disabled;
 		$n_img++;
 	}
 
@@ -263,12 +269,16 @@ sub pto_parse
 
 	if ($p->Option->{outputLDRLayers} =~ /true/) {
 		for (my $i = 0; $i < $n_img; $i++) {
+			my $disabled = exists $p->ImageMetadata->[$i]->{disabled};
+			next if $disabled;
 			push @out, sprintf "%s%04d.%s", $path_prefix, $i, ($p->Option->{outputImageType} || 'tif');
 		}
 	}
 
 	if ($p->Option->{outputLDRExposureRemapped} =~ /true/) {
 		for (my $i = 0; $i < $n_img; $i++) {
+			my $disabled = exists $p->ImageMetadata->[$i]->{disabled};
+			next if $disabled;
 			push @out, sprintf "%s_exposure_layers_%04d.%s", $path_prefix, $i, ($p->Option->{outputImageType} || 'tif');
 		}
 	}
@@ -742,7 +752,7 @@ sub add_includes
 	foreach my $file (sort keys %{$self->{files}}) {
 		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".make");
 		if ($suffix) {
-			$self->{makefile} .= "include $file\n";
+			$self->{makefile} .= "-include $file\n";
 		}
 	}
 }
