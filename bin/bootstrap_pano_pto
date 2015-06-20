@@ -8,6 +8,6 @@ shift
 
 pto_gen --distortion --vignetting -o "$PTO" "$@"
 cpfind -n 4 --celeste --multirow -o "$PTO.tmp" "$PTO"
-autooptimiser -a -l -m -s "$PTO.tmp" -o "$PTO"
+autooptimiser -p -m "$PTO.tmp" -o "$PTO"
 rm "$PTO.tmp"
 
