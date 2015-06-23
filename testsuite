@@ -21,9 +21,8 @@ cp -pr template test1
 # initialize makefile
 cd test1/collection
 
-rawmk makefile .
 # call make - no images, do it just exits
-make 
+rawmk make
 
 echo "==================================================================="
 echo " 'download' images"
@@ -57,14 +56,16 @@ test -f 2014-01-28/img_1507l.cr2
 
 
 cp ../../test_data/test.gpx 2014-01-28
-echo 'GEOTAG_OPTS = '"'"'-geotime<$${DateTimeOriginal}-03:00'"'" > 2014-01-28/geotag.make
+#echo 'GEOTAG_OPTS = '"'"'-geotime<$${DateTimeOriginal}-03:00'"'" > 2014-01-28/geotag.make
+echo '[ENV]
+GEOTAG_OPTS=-geotime<${DateTimeOriginal}-03:00' > 2014-01-28/geotag.ini
 
 echo "==================================================================="
 echo " get default result"
 echo "==================================================================="
 
 #call make - get default results
-make
+rawmk make
 
 #check default results
 test -f 2012-03-24/img_7977.jpg
@@ -73,6 +74,45 @@ test -f 2014-01-28/img_4972.jpg
 
 test -f 2014-01-28/img_1507.jps
 
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
+
+echo "==================================================================="
+echo " make again - nothing changed, should just check files and exit"
+echo "==================================================================="
+
+touch timestamp
+
+#call make - get default results
+rawmk make
+
+test 2012-03-24/img_7977.jpg -ot timestamp
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
+
+echo "==================================================================="
+echo " check 16bit processing"
+echo "==================================================================="
+
+touch timestamp
+touch 2014-01-28/img_1507.pto
+rawmk make -C 2014-01-28 OUTPUTS # no clean
+
+test 2014-01-28/img_1507.jps -nt timestamp
+test 2014-01-28/img_1507l.tif.expanded -nt timestamp
+test 2014-01-28/img_1507r.tif.expanded -nt timestamp
+
+test 2014-01-28/img_4971.jpg -ot timestamp
+test 2014-01-28/img_4972.jpg -ot timestamp
+
+rawmk make -C 2014-01-28 clean
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
+
+
 
 echo "==================================================================="
 echo " edit rawtherapee parameters"
@@ -80,7 +120,7 @@ echo "==================================================================="
 
 sed -i -e "s|VerticalFlip=false|VerticalFlip=true|" 2012-03-24/img_7977.cr2.pp3
 touch timestamp
-make
+rawmk make
 
 # this output files should be updated
 test 2012-03-24/img_7977.jpg -nt timestamp
@@ -89,6 +129,8 @@ test 2012-03-24/img_7977.jpg -nt timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
 test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 
 #sbs stereo
@@ -97,7 +139,7 @@ echo " create stereo image from 1 SBS source"
 echo "==================================================================="
 rawmk add_sbs 2012-03-24/img_7977.cr2
 touch timestamp
-make
+rawmk make
 
 # result exists and is newly created
 test -f 2012-03-24/img_7977.jps
@@ -108,6 +150,8 @@ test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
 test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 #stereo from 2 images
 echo "==================================================================="
@@ -115,7 +159,7 @@ echo " create stereo image from 2 independent sources"
 echo "==================================================================="
 rawmk add_stereo --swap 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 touch timestamp
-make
+rawmk make
 
 # result exists and is newly created
 test -f 2014-01-28/img_4972_img_4971.jps
@@ -127,6 +171,8 @@ test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
 test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 
 echo "==================================================================="
@@ -134,18 +180,20 @@ echo " create stereo image from 2 independent sources, swap L R images"
 echo "==================================================================="
 rawmk add_stereo 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 touch timestamp
-make
+rawmk make
 # result exists and is newly created
 test -f 2014-01-28/img_4971_img_4972.jps
 test 2014-01-28/img_4971_img_4972.jps -nt timestamp
 
 # previously created files stay unchanged
-test 2014-01-28/img_4972_img_4971.jps -ot timestamp
+#test 2014-01-28/img_4972_img_4971.jps -ot timestamp #questuionable, this shares intermediate files
 test 2012-03-24/img_7977.jps -ot timestamp
 test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
 test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 
 #pano
@@ -154,7 +202,7 @@ echo " create pano image - pto first"
 echo "==================================================================="
 rawmk add_pano --dir 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 touch timestamp
-make
+rawmk make
 
 # result exists and is newly created, it is just pto file for now
 test -f 2014-01-28/img_4971_img_4972/img_4971_img_4972.pto
@@ -168,12 +216,14 @@ test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
 test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 echo "==================================================================="
 echo " create pano image - part 2 - tiff output"
 echo "==================================================================="
 touch timestamp
-make
+rawmk make
 test -f 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif
 test 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif -nt timestamp
 
@@ -186,6 +236,8 @@ test 2012-03-24/img_7977.jpg -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
 test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 echo "==================================================================="
 echo " TEST 2 - the same as test 1, as fast as possible "
@@ -203,9 +255,8 @@ cp -pr template test2
 # initialize makefile
 cd test2/collection
 
-rawmk makefile .
 # call make - no images, do it just exits
-make 
+rawmk make
 
 echo "==================================================================="
 echo " 'download' images"
@@ -238,7 +289,9 @@ test -f 2014-01-28/img_1507r.cr2
 test -f 2014-01-28/img_1507l.cr2
 
 cp ../../test_data/test.gpx 2014-01-28
-echo 'GEOTAG_OPTS = '"'"'-geotime<$${DateTimeOriginal}-03:00'"'" > 2014-01-28/geotag.make
+#echo 'GEOTAG_OPTS = '"'"'-geotime<$${DateTimeOriginal}-03:00'"'" > 2014-01-28/geotag.make
+echo '[ENV]
+GEOTAG_OPTS=-geotime<${DateTimeOriginal}-03:00' > 2014-01-28/geotag.ini
 
 echo "==================================================================="
 echo " mark sbs stereo, independent stereo and pano and run make"
@@ -249,7 +302,7 @@ rawmk add_stereo --both 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 rawmk add_pano --dir 2014-01-28/img_4971.cr2 2014-01-28/img_4972.cr2
 
 touch timestamp
-make -j8
+rawmk make -j 8
 
 
 # result exists and is newly created, it is just pto file for now
@@ -261,6 +314,8 @@ test -f 2012-03-24/img_7977.jpg
 test -f 2014-01-28/img_4971.jpg
 test -f 2014-01-28/img_4972.jpg
 test -f 2014-01-28/img_1507.jps
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 echo "==================================================================="
 echo " create pano image - part 2 - tiff output"
@@ -271,7 +326,7 @@ sed -i -e "s|VerticalFlip=false|VerticalFlip=true|" 2012-03-24/img_7977.cr2.pp3
 rm 2012-03-24/img_7977.pto # let the file autogenerate again
 
 touch timestamp
-make -j8
+rawmk make -j 8
 test -f 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif
 test 2014-01-28/img_4971_img_4972/img_4971_img_4972.tif -nt timestamp
 
@@ -285,6 +340,8 @@ test 2014-01-28/img_4972_img_4971.jps -ot timestamp
 test 2014-01-28/img_4971.jpg -ot timestamp
 test 2014-01-28/img_4972.jpg -ot timestamp
 test 2014-01-28/img_1507.jps -ot timestamp
+# check that clean works
+[ -z "`find . -name '*.expanded' -print `" ]
 
 echo "==================================================================="
 echo " all tests passed"
