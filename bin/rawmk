@@ -53,7 +53,7 @@ sub initialize
 		next unless $file =~ /\.ini$/;
 		$self->read_config(File::Spec->catfile($self->{BASEDIR}, $file));
 	}
-	print STDERR Dumper($self);
+#	print STDERR Dumper($self);
 }
 
 sub read_config
@@ -109,7 +109,7 @@ use Data::Dumper;
 use File::Compare;
 
 use FindBin;
-use lib "$FindBin::Bin/../lib";
+use lib "$FindBin::RealBin/../lib";
 use PLMake::PLMake;
 
 sub new 
@@ -750,9 +750,12 @@ sub process
 sub run_make
 {
 	my $self = shift;
+	my $jobs = shift;
 	my @targets = @_;
 	
 	@targets = ('all') unless @targets;
+	
+	$self->{make}->jobs($jobs);
 
 	for my $target (@targets) {
 		$self->{make}->add_target($target, {requested => 1});
@@ -765,17 +768,17 @@ sub run_make
 	}
 
 print "Before proc\n";
-print Dumper($self->{make});
+#print Dumper($self->{make});
 
 	$self->{make}->apply_rules;
 
-print "Rules applied\n";
-print Dumper($self->{make});
+#print "Rules applied\n";
+#print Dumper($self->{make});
 
 	$self->{make}->check_remake;
 
 print "Remake checked\n";
-print Dumper($self->{make});
+#print Dumper($self->{make});
 
 	$self->{make}->remake;
 
@@ -1366,7 +1369,7 @@ if ($ARGV[0] eq 'make') {
 
 	my $mk = RAWMK::Makefile->new($dir);
 	$mk->process();
-	$mk->run_make(@ARGV);
+	$mk->run_make($jobs, @ARGV);
 }
 elsif ($ARGV[0] eq 'get_conf') {
 	my $param = $ARGV[1];

@@ -17,7 +17,6 @@ sub new {
         $self->{timestamp} = $stat[9];
     }
     else {
-        $self->{timestamp} = 0;
         $self->{flags}->{missing} = 1;
     }
 
@@ -61,39 +60,73 @@ sub rule {
     return $rules[0];
 }
 
-sub must_remake {
-    my ($self, $hash, $ts) = @_;
-    my $ret = 0;
+sub mark_req_sources {
+    my ($self) = @_;
 
+    return if $self->{flags}->{req_source};
+
+    $self->{flags}->{req_source} = 1;
+
+    for my $s (@{$self->{sources}}) {
+        $s->mark_req_sources();
+    }
+}
+
+sub add_missing_timestamp {
+    my ($self, $ts) = @_;
+
+    $self->{num_tgt_checked} //= 0;
+    $self->{num_tgt_checked}++ if (values %{$self->{targets}} > 0);
+
+    
     if (defined $ts) {
-        if ($ts <= $self->{timestamp}) {
-            $ts = $self->{timestamp};
-            $ret = 1;
+        if ($self->{flags}->{missing} && !$self->{flags}->{phony}) {
+            if (!defined $self->{timestamp} || $self->{timestamp} > $ts) {
+                $self->{timestamp} = $ts;
+            }
         }
     }
-    else {
-        $ts = $self->{timestamp};
-    }
     
-    $ts = 0 if $self->{flags}->{remake};
+    if ($self->{flags}->{missing} && 
+        ($self->{flags}->{requested} || $self->{flags}->{phony})) {
+        $self->{timestamp} = 0;
+    }
+
+    if ($self->{num_tgt_checked} == values %{$self->{targets}}) {
+        for my $s (@{$self->{sources}}) {
+            $s->add_missing_timestamp($self->{timestamp});
+        }
+    }
+}
+
+sub check_remake {
+    my ($self, $remake, $ts) = @_;
+    
+    $self->{num_src_checked} //= 0;
+    $self->{num_src_checked}++ if (@{$self->{sources}} > 0);
+    
+    $self->{flags}->{remake} = 1 if (defined $ts && $ts > $self->{timestamp});
+    $self->{flags}->{remake} = 1 if $remake;
+    $self->{flags}->{remake} = 1 if $self->{flags}->{phony};
+    
+    print "check remake $self->{flags}->{remake} $self->{name} $self->{timestamp}\n";
+    
+    if ($self->{num_src_checked} == @{$self->{sources}}) {
+        for my $t (values %{$self->{targets}}) {
+            $t->check_remake($self->{flags}->{remake}, $self->{timestamp});
+        }
+    }
+}
+
+sub remake_missing {
+    my ($self) = @_;
     
     for my $s (@{$self->{sources}}) {
-        if ($s->must_remake($hash, $ts)) {
-            $self->{flags}->{remake} = 1;
-            $hash->{$self} = $self;
+        if ($s->{flags}->{missing} && !$s->{flags}->{remake}) {
+            $s->{flags}->{remake} = 1;
+            $s->remake_missing;
         }
     }
-    
-    if ($self->{flags}->{phony} && $self->rule) {
-        $self->{flags}->{remake} = 1;
-        $hash->{$self} = $self;
-    }
-    
-    $ret = 1 if $self->{flags}->{remake};
-    
-    die "can't remake $self->{name}" if $self->{flags}->{missing} && !$self->rule;
-    
-    return $ret;
 }
 
 1;

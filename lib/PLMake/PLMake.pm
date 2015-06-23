@@ -4,6 +4,7 @@ use strict;
 use PLMake::Rule;
 use PLMake::Target;
 use Data::Dumper;
+use Parallel::ForkManager;
 
 sub new {
     my $class = shift;
@@ -51,7 +52,7 @@ sub apply_rules {
     my $self = shift;
     
     chdir($self->{dir});
-
+print Dumper($self);
     my $done;
     # apply all rules, get all possible targets
     do {
@@ -74,8 +75,6 @@ sub apply_rules {
             }
         }
     } while (!$done);
-
-    print Dumper($self);
 
     # remove rules without sources
     do {
@@ -123,20 +122,20 @@ sub apply_rules {
         my @rules = $t->get_rules;
         die "conflicting rules for $t->{name}" if @rules > 1;
         if (@rules == 1) {
-            my @s_refs;
+            my %s_refs;
             my @sources = $rules[0]->sources_for_target($t);
             for my $s (@sources) {
                 print "source $s -> $t->{name}\n";
                 my $sr = $self->{targets}->{$s};
                 die "no source for $s -> $t->{name}" unless $sr;
-                push @s_refs, $sr;
+                $s_refs{$sr} = $sr;
             }
-            $t->{sources} = \@s_refs;
+            $t->{sources} = [values %s_refs];
 
             my @sb_refs;
             my @siblings = $rules[0]->siblings_for_target($t);
             for my $s (@siblings) {
-                print "sibling $s\n";
+#                print "sibling $s\n";
                 die "multiple rules for siblings" if $rules[0] != $self->{targets}->{$s}->rule;
                 push @sb_refs, $self->{targets}->{$s};
             }
@@ -148,21 +147,68 @@ sub apply_rules {
 sub check_remake {
     my $self = shift;
     $self->{to_remake} = {};
-    my $n_to_remake;
-    do {
-        $n_to_remake = keys %{$self->{to_remake}};
-        for my $t (values %{$self->{targets}}) {
-            if ($t->{flags}->{requested}) {
-                $t->must_remake($self->{to_remake});
-            }
+#    my $n_to_remake;
+#    do {
+#        $n_to_remake = keys %{$self->{to_remake}};
+#        for my $t (values %{$self->{targets}}) {
+#            if ($t->{flags}->{requested}) {
+#                $t->must_remake($self->{to_remake});
+#            }
+#        }
+#    } while ($n_to_remake < keys %{$self->{to_remake}});
+print "check remake back\n";
+    for my $t (values %{$self->{targets}}) {
+        $t->mark_req_sources() if ($t->{flags}->{requested});
+    }
+
+    for my $t (values %{$self->{targets}}) {
+        if (!$t->{flags}->{req_source} && !$t->{flags}->{requested}) {
+            print "not requested target $t->{name}\n";
+            delete $self->{targets}->{$t->{name}}
         }
-    } while ($n_to_remake < keys %{$self->{to_remake}});
+    }
+
+    for my $t (values %{$self->{targets}}) {
+        for my $s (@{$t->{sources}}) {
+            $s->{targets} //= {};
+            $s->{targets}->{$t} = $t;
+        }
+    }
+
+    for my $t (values %{$self->{targets}}) {
+        $t->add_missing_timestamp() if ($t->{flags}->{requested});
+    }
+
+print "check remake forward\n";
+    my $n;
+    do {
+        for my $t (values %{$self->{targets}}) {
+            $t->check_remake() if (@{$t->{sources}} == 0);
+        }
+        
+        $n = values %{$self->{to_remake}};
+        
+        for my $t (values %{$self->{targets}}) {
+            $t->remake_missing if $t->{flags}->{remake};
+        }
+        
+
+        for my $t (values %{$self->{targets}}) {
+            $self->{to_remake}->{$t} = $t if $t->{flags}->{remake};
+        
+            die "brogen dep graph" unless $t->{num_src_checked} == @{$t->{sources}};
+            print "$t->{name} $t->{flags}->{remake} checked  $t->{num_src_checked} \n";
+            
+            delete $t->{num_src_checked};
+        }
+    } while ($n != values %{$self->{to_remake}});
 }
 
 sub next_to_remake {
     my $self = shift;
 
-    for my $t (values %{$self->{to_remake}}) {
+    for my $t (sort {$a->{name} cmp $b->{name}} values %{$self->{to_remake}}) {
+        next if $t->{in_progress};
         my $src_ready = 1;
         for my $s (@{$t->{sources}}) {
             if ($self->{to_remake}->{$s}) {
@@ -171,6 +217,10 @@ sub next_to_remake {
             }
         }
         if ($src_ready) {
+            $t->{in_progress} = 1;
+            for my $s (@{$t->{siblings}}) {
+                $s->{in_progress} = 1;
+            }
             return $t;
         }
     }
@@ -179,13 +229,13 @@ sub next_to_remake {
 sub remake_done {
     my ($self, $t) = @_;
     
-    delete $self->{to_remake}->{$t};
     for my $s (@{$t->{siblings}}) {
         delete $self->{to_remake}->{$s};
     }
+    delete $self->{to_remake}->{$t};
 }
 
-sub remake {
+sub remake_j1 {
     my $self = shift;
     
     while (my $t = $self->next_to_remake) {
@@ -195,15 +245,79 @@ sub remake {
             print "$s ";
         }
         print "\n";
-#        print Dumper $t->rule;
-        
-#        $t->rule->print_cmd($t,1);
         if ($t->rule->execute_cmd($t, 0) != 0) {
             print "Command failed\n";
             exit(1);
         }
         $self->remake_done($t);
     }
+}
+
+sub remake_parallel {
+    my $self = shift;
+    
+    my $max_jobs = 4;
+    my $num_slots = $max_jobs;
+    my $pm = Parallel::ForkManager->new($max_jobs);
+    my $error = 0;
+    
+    $pm->run_on_start(sub {
+        $num_slots--;
+        print "on start num_slots $num_slots\n";
+    });
+
+    $pm->run_on_finish( sub {
+        my ($pid, $code, $t) = @_;
+        $num_slots++;
+        $error = 1 if $code != 0;
+
+        print "on finish num_slots $num_slots error $error   par $pid, $code, $t->{name}\n";
+        $self->remake_done($t);
+    });
+    
+    while ((my $n = values %{$self->{to_remake}}) > 0 && !$error) {
+        my $t;
+        print "check next ($n)\n";
+        if (! ($t = $self->next_to_remake)) {
+            print "waiting\n";
+            die "no next target" if $num_slots >= $max_jobs;
+            $pm->wait_for_available_procs($num_slots + 1);
+            next;
+        }
+        print "start $t->{name}\n";
+        
+        $pm->start($t) and next;
+
+        print "# $t->{name}\n#   ";
+        my @sources = $t->rule->sources_for_target($t);
+        for my $s (@sources) {
+            print "$s ";
+        }
+        print "\n";
+        
+        my $ret = $t->rule->execute_cmd($t, 0);
+        print "Command failed\n" if $ret != 0;
+        
+        $pm->finish($ret)
+    }
+    
+    $pm->wait_all_children;
+}
+
+sub remake {
+    my $self = shift;
+
+    if ($self->{jobs} && $self->{jobs} > 1) {
+        return $self->remake_parallel;
+    }
+    else {
+        return $self->remake_j1;
+    }
+}
+
+sub jobs {
+    my ($self, $jobs) = @_;
+    $self->{jobs} = $jobs;
 }
 
 1;
