@@ -2,8 +2,18 @@
 # $1 tif
 
 if [ -f "$1.expanded" ]; then
-	set -e -x
-	convert "$1[0]" -depth 8 -compress jpeg "tmp_$1" 
-	exiftool -overwrite_original -tagsFromFile "$1" "tmp_$1"
-	touch -r "$1" "tmp_$1" && mv -f "tmp_$1" "$1" && rm -f "$1.expanded"
+	if [ -f "$1" ]; then 
+		if [ -s "$1" ]; then
+			set -e -x
+			convert "$1[0]" -depth 8 -compress jpeg "tmp_$1" 
+			exiftool -overwrite_original -tagsFromFile "$1" "tmp_$1"
+			touch -r "$1" "tmp_$1" && mv -f "tmp_$1" "$1" && rm -f "$1.expanded"
+		else
+			echo "deleting zero-sized file $1" > /dev/stderr
+			rm -f "$1"
+			rm -f "$1.expanded"
+		fi
+	else
+		rm -f "$1.expanded"
+	fi
 fi
