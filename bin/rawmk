@@ -675,7 +675,6 @@ sub add_collapse_rules
 	my @collapse;
 	foreach my $file (sort keys %{$self->{files}}) {
 		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".expanded");
-		print "test file $name,$path,$suffix\n";
 		if ($suffix) {
 			$self->{make}->add_rule(["$name.expanded.COLLAPSE"], [], [$self->{CONF}{S_COLLAPSE_TIF}, $name ]);
 			push @collapse, "$name.expanded.COLLAPSE";
@@ -692,7 +691,7 @@ sub add_includes
 	foreach my $file (sort keys %{$self->{files}}) {
 		my ($name,$path,$suffix) = fileparse($self->{files}{$file}{PATH}, ".pl");
 		if ($suffix) {
-			open FILE, $file or die "Couldn't open file: $!"; 
+			open FILE, $self->{files}{$file}{PATH} or die "Couldn't open file $self->{files}{$file}{PATH}: $!"; 
 			my $code = join("", <FILE>); 
 			close FILE;
 			eval $code;
@@ -755,7 +754,7 @@ sub run_make
 	
 	@targets = ('all') unless @targets;
 	
-	$self->{make}->jobs($jobs);
+	$self->{make}->jobs($jobs) if $jobs;
 
 	for my $target (@targets) {
 		$self->{make}->add_target($target, {requested => 1});
@@ -780,7 +779,7 @@ print "Before proc\n";
 print "Remake checked\n";
 #print Dumper($self->{make});
 
-	$self->{make}->remake;
+	return $self->{make}->remake;
 
 }
 
@@ -1353,7 +1352,7 @@ if ($ARGV[0] eq 'make') {
 	shift @ARGV;
 
 	my $dir = '.';
-	my $jobs = 1;
+	my $jobs = undef;
 	if (!GetOptions(
 		'C=s' => \$dir,
 		'j=s' => \$jobs,
@@ -1369,7 +1368,7 @@ if ($ARGV[0] eq 'make') {
 
 	my $mk = RAWMK::Makefile->new($dir);
 	$mk->process();
-	$mk->run_make($jobs, @ARGV);
+	exit $mk->run_make($jobs, @ARGV);
 }
 elsif ($ARGV[0] eq 'get_conf') {
 	my $param = $ARGV[1];

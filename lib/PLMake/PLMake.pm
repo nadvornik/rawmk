@@ -5,6 +5,7 @@ use PLMake::Rule;
 use PLMake::Target;
 use Data::Dumper;
 use Parallel::ForkManager;
+use Cwd 'abs_path';
 
 sub new {
     my $class = shift;
@@ -12,8 +13,11 @@ sub new {
     my $self = bless {
         rules => [],
         targets => {},
-        dir => $dir,
+        dir => abs_path($dir),
     }, $class;
+    
+    $self->{jobs} = $ENV{PLMAKE_JOBS};
+    $self->{jobs} = 1 unless $self->{jobs} > 1;
     return $self;
 }
 
@@ -52,7 +56,7 @@ sub apply_rules {
     my $self = shift;
     
     chdir($self->{dir});
-print Dumper($self);
+print "apply rules\n";
     my $done;
     # apply all rules, get all possible targets
     do {
@@ -76,6 +80,8 @@ print Dumper($self);
         }
     } while (!$done);
 
+print "prune rules\n";
+
     # remove rules without sources
     do {
         $done = 1;
@@ -95,6 +101,8 @@ print Dumper($self);
         }
     } while (!$done);
 
+print "prune targets\n";
+
     for my $t (values %{$self->{targets}}) {
         if ($t->{flags}->{missing} && $t->get_rules == 0) {
             print "irrelevant target $t->{name}\n";
@@ -102,6 +110,7 @@ print Dumper($self);
         }
     }
 
+print "check conflicts\n";
 
     for my $t (values %{$self->{targets}}) {
         my @rules = $t->get_rules;
@@ -117,7 +126,9 @@ print Dumper($self);
             print Dumper($s_rules[0]);
         }
     }
-    
+
+print "expand sources\n";
+
     for my $t (values %{$self->{targets}}) {
         my @rules = $t->get_rules;
         die "conflicting rules for $t->{name}" if @rules > 1;
@@ -237,6 +248,7 @@ sub remake_done {
 
 sub remake_j1 {
     my $self = shift;
+    my $error = 0;
     
     while (my $t = $self->next_to_remake) {
         print "# $t->{name}\n#   ";
@@ -247,10 +259,12 @@ sub remake_j1 {
         print "\n";
         if ($t->rule->execute_cmd($t, 0) != 0) {
             print "Command failed\n";
-            exit(1);
+            $error = 1;
+            last;
         }
         $self->remake_done($t);
     }
+    return $error;
 }
 
 sub remake_parallel {
@@ -263,7 +277,6 @@ sub remake_parallel {
     
     $pm->run_on_start(sub {
         $num_slots--;
-        print "on start num_slots $num_slots\n";
     });
 
     $pm->run_on_finish( sub {
@@ -271,9 +284,10 @@ sub remake_parallel {
         $num_slots++;
         $error = 1 if $code != 0;
 
-        print "on finish num_slots $num_slots error $error   par $pid, $code, $t->{name}\n";
         $self->remake_done($t);
     });
+    
+    $SIG{TERM} = sub { $error = 1; };
     
     while ((my $n = values %{$self->{to_remake}}) > 0 && !$error) {
         my $t;
@@ -302,17 +316,23 @@ sub remake_parallel {
     }
     
     $pm->wait_all_children;
+    return $error;
 }
 
 sub remake {
     my $self = shift;
+    my $error = 0;
+    
+    $ENV{PLMAKE_JOBS} = $self->{jobs};
 
     if ($self->{jobs} && $self->{jobs} > 1) {
-        return $self->remake_parallel;
+        $error = $self->remake_parallel;
     }
     else {
-        return $self->remake_j1;
+        $error = $self->remake_j1;
     }
+    print "leaving $self->{dir}\n";
+    return $error;
 }
 
 sub jobs {

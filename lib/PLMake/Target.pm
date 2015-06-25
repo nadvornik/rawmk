@@ -112,7 +112,13 @@ sub check_remake {
     print "check remake $self->{flags}->{remake} $self->{name} $self->{timestamp}\n";
     
     if ($self->{num_src_checked} == @{$self->{sources}}) {
+        if ($self->{flags}->{remake}) {
+            for my $s (@{$self->{siblings}}) {
+                $s->{flags}->{remake} = 1;
+            }
+        }
         for my $t (values %{$self->{targets}}) {
+            print "check remake targets  $self->{flags}->{remake} $self->{name} $self->{timestamp} -> $t->{flags}->{remake} $t->{name} $t->{timestamp}\n";
             $t->check_remake($self->{flags}->{remake}, $self->{timestamp});
         }
     }
