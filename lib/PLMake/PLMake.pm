@@ -35,13 +35,14 @@ sub add_target {
     my $target = $self->{targets}->{$name};
     if ($target) {
         $target->set_flags(%$flags);
+        return ($target, 0);
     }
     else {
         $target = PLMake::Target->new($name, $flags);
         die "can't create target" unless $target;
         $self->{targets}->{$target->{name}} = $target;
+        return ($target, 1);
     }
-    return $target;
 }
 
 sub phony {
@@ -59,26 +60,24 @@ sub apply_rules {
 print "apply rules\n";
     my $done;
     # apply all rules, get all possible targets
-    do {
-        $done = 1;
-        for my $t (values %{$self->{targets}}) {
-            for my $r (@{$self->{rules}}) {
-                next if $t->has_rule($r);
-                if ($r->matches_target($t)) {
-                    $done = 0;
-                    my @sources = $r->sources_for_target($t);
-                    for my $s (@sources) {
-                        $self->add_target($s, {});
-                    }
-                    my @siblings = $r->siblings_for_target($t);
-                    for my $s (@siblings) {
-                        $self->add_target($s, {});
-                    }
-                    $t->add_rule($r);
+    my @todo = values %{$self->{targets}};
+    while (my $t = shift @todo) {
+        for my $r (@{$self->{rules}}) {
+            if ($r->matches_target($t)) {
+                my @sources = $r->sources_for_target($t);
+                for my $s (@sources) {
+                    my ($s_ref, $new) = $self->add_target($s, {});
+                    push @todo, $s_ref if $new;
                 }
+                my @siblings = $r->siblings_for_target($t);
+                for my $s (@siblings) {
+                    my ($s_ref, $new) = $self->add_target($s, {});
+                    push @todo, $s_ref if $new;
+                }
+                $t->add_rule($r);
             }
         }
-    } while (!$done);
+    }
 
 print "prune rules\n";
 
@@ -91,7 +90,7 @@ print "prune rules\n";
                 for my $s (@sources) {
                     my $s_ref = $self->{targets}->{$s};
                     if ($s_ref->{flags}->{missing} && !$s_ref->{flags}->{phony} && !$s_ref->{flags}->{requested} && $s_ref->get_rules == 0) {
-                        print "irrelevant $s -> $t->{name}\n";
+#                        print "irrelevant $s -> $t->{name}\n";
                         $t->remove_rule($r);
                         $done = 0;
                         last;
@@ -105,7 +104,7 @@ print "prune targets\n";
 
     for my $t (values %{$self->{targets}}) {
         if ($t->{flags}->{missing} && $t->get_rules == 0) {
-            print "irrelevant target $t->{name}\n";
+#            print "irrelevant target $t->{name}\n";
             delete $self->{targets}->{$t->{name}}
         }
     }
@@ -136,7 +135,6 @@ print "expand sources\n";
             my %s_refs;
             my @sources = $rules[0]->sources_for_target($t);
             for my $s (@sources) {
-                print "source $s -> $t->{name}\n";
                 my $sr = $self->{targets}->{$s};
                 die "no source for $s -> $t->{name}" unless $sr;
                 $s_refs{$sr} = $sr;
@@ -146,7 +144,6 @@ print "expand sources\n";
             my @sb_refs;
             my @siblings = $rules[0]->siblings_for_target($t);
             for my $s (@siblings) {
-#                print "sibling $s\n";
                 die "multiple rules for siblings" if $rules[0] != $self->{targets}->{$s}->rule;
                 push @sb_refs, $self->{targets}->{$s};
             }
@@ -174,7 +171,7 @@ print "check remake back\n";
 
     for my $t (values %{$self->{targets}}) {
         if (!$t->{flags}->{req_source} && !$t->{flags}->{requested}) {
-            print "not requested target $t->{name}\n";
+#            print "not requested target $t->{name}\n";
             delete $self->{targets}->{$t->{name}}
         }
     }
@@ -207,7 +204,7 @@ print "check remake forward\n";
         for my $t (values %{$self->{targets}}) {
             $self->{to_remake}->{$t} = $t if $t->{flags}->{remake};
         
-            die "brogen dep graph" unless $t->{num_src_checked} == @{$t->{sources}};
+            die "broken dep graph" unless $t->{num_src_checked} == @{$t->{sources}};
             print "$t->{name} $t->{flags}->{remake} checked  $t->{num_src_checked} \n";
             
             delete $t->{num_src_checked};

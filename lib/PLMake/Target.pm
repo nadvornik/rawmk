@@ -109,8 +109,6 @@ sub check_remake {
     $self->{flags}->{remake} = 1 if $remake;
     $self->{flags}->{remake} = 1 if $self->{flags}->{phony};
     
-    print "check remake $self->{flags}->{remake} $self->{name} $self->{timestamp}\n";
-    
     if ($self->{num_src_checked} == @{$self->{sources}}) {
         if ($self->{flags}->{remake}) {
             for my $s (@{$self->{siblings}}) {
@@ -118,7 +116,7 @@ sub check_remake {
             }
         }
         for my $t (values %{$self->{targets}}) {
-            print "check remake targets  $self->{flags}->{remake} $self->{name} $self->{timestamp} -> $t->{flags}->{remake} $t->{name} $t->{timestamp}\n";
+            print "check remake targets  =$self->{flags}->{remake}= $self->{name} $self->{timestamp} -> =$t->{flags}->{remake}= $t->{name} $t->{timestamp}\n";
             $t->check_remake($self->{flags}->{remake}, $self->{timestamp});
         }
     }
