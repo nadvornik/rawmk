@@ -6,6 +6,7 @@ Version=318
 Rank=0
 ColorLabel=0
 InTrash=false
+Verbose=true
 
 [Exposure]
 Auto=false
@@ -290,7 +291,7 @@ bCurve=0;
 
 [RAW]
 DarkFrame=
-DarkFrameAuto=false
+DarkFrameAuto=true
 FlatFieldFile=
 FlatFieldAutoSelect=false
 FlatFieldBlurRadius=32

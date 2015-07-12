@@ -10,5 +10,6 @@ align_image_stack --distortion --corr=0.8 -p "tmp1_$3" -x -s 4 -P -C "$1" "$2"
 pto_var --unlink Er1,Eb1 --modify-opt --opt Eev1 "tmp1_$3" -o "tmp2_$3"
 vig_optimize "tmp2_$3" -o "tmp3_$3" 
 pano_modify --crop=AUTOHDR --output-exposure=AUTO -o "$3" "tmp3_$3"
+ptoset -o outputLDRBlended=false -o outputLDRLayers=true "$3"
 rm "tmp1_$3" "tmp2_$3" "tmp3_$3"
 

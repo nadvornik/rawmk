@@ -4,16 +4,14 @@
 
 PTO=$1
 PREFIX=`basename $1 .pto`
-if [ -z "$MAKE" ] ; then
-	export MAKE=make
-fi
 
 shift
 
 rm -f "$@"
 
-pto2mk -o "$PTO.mk" -p "$PREFIX" "$PTO"
-$MAKE -e -f "$PTO.mk" all
-$MAKE -e -f "$PTO.mk" clean
+hugin_executor --stitching -p "$PREFIX" "$PTO"
+#pto2mk -o "$PTO.mk" -p "$PREFIX" "$PTO"
+#$MAKE -e -f "$PTO.mk" all
+#$MAKE -e -f "$PTO.mk" clean
 
 touch "$@"
