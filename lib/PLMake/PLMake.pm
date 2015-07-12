@@ -280,6 +280,8 @@ sub remake_parallel {
         my ($pid, $code, $t) = @_;
         $num_slots++;
         $error = 1 if $code != 0;
+        print "parent finish code $code\n";
+        print "Command failed parent\n" if $code != 0;
 
         $self->remake_done($t);
     });
@@ -307,9 +309,9 @@ sub remake_parallel {
         print "\n";
         
         my $ret = $t->rule->execute_cmd($t, 0);
-        print "Command failed\n" if $ret != 0;
+        print "Command failed $ret\n" if $ret != 0;
         
-        $pm->finish($ret)
+        $pm->finish(!!$ret)
     }
     
     $pm->wait_all_children;
