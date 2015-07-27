@@ -13,6 +13,85 @@ use Image::Size;
 use Math::Trig;
 use Data::Dumper;
 
+sub EulerToQuat
+{
+	my ($yaw, $pitch, $roll) = map (deg2rad ($_), @_);
+	my ($cr, $cp, $cy, $sr, $sp, $sy, $cpcy, $spsy);
+	# calculate trig identities
+	$cr = cos($roll/2);
+	$cp = cos($pitch/2);
+	$cy = cos($yaw/2);
+	$sr = sin($roll/2);
+	$sp = sin($pitch/2);
+	$sy = sin($yaw/2);
+	$cpcy = $cp * $cy;
+	$spsy = $sp * $sy;
+	my $w = $cr * $cpcy + $sr * $spsy;
+	my $x = $sr * $cpcy - $cr * $spsy;
+	my $y = $cr * $sp * $cy + $sr * $cp * $sy;
+	my $z = $cr * $cp * $sy - $sr * $sp * $cy;
+	return ($w, $x, $y, $z);
+} 
+
+sub QuatToEuler
+{
+	my ($w, $x, $y, $z) = @_;
+	
+	my $roll = atan2(2 * ($w * $x + $y * $z), 1 - 2 * ($x * $x + $y * $y));
+	my $pitch = asin(2 * ($w * $y - $z * $x));
+	my $yaw = atan2(2 * ($w * $z + $x * $y), 1 - 2 * ($y * $y + $z * $z));
+	return map (rad2deg ($_), ($yaw, $pitch, $roll));
+}
+
+sub QuatSlerp
+{
+	my ($from_w, $from_x, $from_y, $from_z,
+	    $to_w, $to_x, $to_y, $to_z,
+	    $t) = @_;
+	my ($to1_w, $to1_x, $to1_y, $to1_z);
+	my ($omega, $cosom, $sinom, $scale0, $scale1);
+	# calc cosine
+	$cosom = $from_x * $to_x + $from_y * $to_y + $from_z * $to_z + $from_w * $to_w;
+	# adjust signs (if necessary)
+	if ( $cosom <0.0 ) { 
+		$cosom = -$cosom;
+		$to1_w = - $to_w;
+		$to1_x = - $to_x;
+		$to1_y = - $to_y;
+		$to1_z = - $to_z;
+	} else {
+		($to1_w, $to1_x, $to1_y, $to1_z) = ($to_w, $to_x, $to_y, $to_z);
+	}
+	# calculate coefficients
+	if ( (1.0 - $cosom) > 0.001 ) {
+		# standard case (slerp)
+		$omega = acos($cosom);
+		$sinom = sin($omega);
+		$scale0 = sin((1.0 - $t) * $omega) / $sinom;
+		$scale1 = sin($t * $omega) / $sinom;
+	} else {
+		# "from" and "to" quaternions are very close
+		# ... so we can do a linear interpolation
+		$scale0 = 1.0 - $t;
+		$scale1 = $t;
+	}
+	# calculate final values
+	return (
+		$scale0 * $from_w + $scale1 * $to1_w,
+		$scale0 * $from_x + $scale1 * $to1_x,
+		$scale0 * $from_y + $scale1 * $to1_y,
+		$scale0 * $from_z + $scale1 * $to1_z);
+} 
+
+sub QuatAngle
+{
+	my ($from_w, $from_x, $from_y, $from_z,
+	    $to_w, $to_x, $to_y, $to_z) = @_;
+	my $cosom = $from_x * $to_x + $from_y * $to_y + $from_z * $to_z + $from_w * $to_w;
+	return rad2deg(2 * acos($cosom));
+}
+
+
 my %projection = (
 	0 => 0, # rectilinear (normal lenses)
 	3 => 3, # full-frame fisheye
@@ -24,14 +103,39 @@ my %projection = (
 
 my $img = $ARGV[0];
 my $pto = $ARGV[1];
-my $n = $ARGV[2];
+my $n;
 my $out_pto = $ARGV[3];
 my $p_in = new Panotools::Script;
 my $p_out = new Panotools::Script;
 $p_in->Read($pto);
 
 my $p = $p_in->Panorama;
-my $i = $p_in->Image->[$n];
+my ($yaw, $pitch, $roll);
+
+my $i;
+
+if ($ARGV[2] =~ /^\d+$/) {
+	$n = $ARGV[2];
+	$i = $p_in->Image->[$n];
+	$yaw = $i->{y};
+	$pitch = $i->{p};
+	$roll = $i->{r};
+}
+elsif ($ARGV[2] =~ /^[-+]?\d*\.?\d*$/) {
+	$n = 0;
+	$i = $p_in->Image->[$n];
+	my $n2 = @{$p_in->Image} - 1;
+	my $i2 = $p_in->Image->[$n2];
+	my @q1 = EulerToQuat($i->{y}, $i->{p}, $i->{r});
+	my @q2 = EulerToQuat($i2->{y}, $i2->{p}, $i2->{r});
+	my $omega =  QuatAngle(@q1, @q2);
+	my $t = $ARGV[2] / $omega;
+	
+	($yaw, $pitch, $roll) = QuatToEuler(QuatSlerp(@q1, @q2, $t));
+#	print "angle ", QuatAngle(@q1, EulerToQuat($yaw, $pitch, $roll)), "\n";
+}
+#print "$yaw, $pitch, $roll\n";
+
 
 die "unsupported projection" unless defined $projection{$p->{f}};
 
@@ -73,9 +177,9 @@ if (0) {
         }
 }
 
-$p_out->Transform ( 0, 0, - $i->{y});
-$p_out->Transform ( 0, - $i->{p}, 0);
-$p_out->Transform ( - $i->{r}, 0, 0);
+$p_out->Transform ( 0, 0, - $yaw);
+$p_out->Transform ( 0, - $pitch, 0);
+$p_out->Transform ( - $roll, 0, 0);
 
 $p_out->{panorama}->Set(w => $i->{w},
                         h => $i->{h},
