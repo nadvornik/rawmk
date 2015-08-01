@@ -9,9 +9,4 @@ shift
 
 rm -f "$@"
 
-hugin_executor --stitching -p "$PREFIX" "$PTO"
-#pto2mk -o "$PTO.mk" -p "$PREFIX" "$PTO"
-#$MAKE -e -f "$PTO.mk" all
-#$MAKE -e -f "$PTO.mk" clean
-
-touch "$@"
+hugin_executor --stitching -p "$PREFIX" "$PTO" && touch "$@"

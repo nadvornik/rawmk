@@ -70,7 +70,7 @@ sub read_config
 		$self->{"PP3_$p"} = File::Spec->catfile($self->{REL_CONFDIR}, $conf->val( 'PP3', $p )) if defined $conf->val( 'PP3', $p );
 	}
 
-	for my $p (qw(BOOTSTRAP_PANO_PTO BOOTSTRAP_PP3 BOOTSTRAP_SBS_STEREO_PTO BOOTSTRAP_STEREO_PTO BOOTSTRAP_XMP_FOR_RAW COLLAPSE_TIF
+	for my $p (qw(BOOTSTRAP_PANO_PTO BOOTSTRAP_STACK_PTO BOOTSTRAP_PP3 BOOTSTRAP_SBS_STEREO_PTO BOOTSTRAP_STEREO_PTO BOOTSTRAP_XMP_FOR_RAW COLLAPSE_TIF
 	              RAWMK PROCESS_JPS_PTO PROCESS_PANO_PTO PROCESS_RAW PROCESS_RAW_EXPANDED PROCESS_TIF SYNC_STEREO_PP3)) {
 		next unless $conf->val( 'SCRIPTS', $p );
 		$self->{"S_$p"} = $conf->val( 'SCRIPTS', $p );
@@ -335,7 +335,7 @@ sub add_pano_pto
 
 sub add_pano
 {
-	my ($self, $prefix, $bases) = @_;
+	my ($self, $prefix, $bases, $mode) = @_;
 
 	my $pto = "$prefix.pto";
 	if ($self->{files}{$pto}) {
@@ -349,7 +349,17 @@ sub add_pano
 			push @prereqs, "$base.neutral.tif";
 		}
 		if (@prereqs > 0) {
-			$self->{make}->add_rule([$pto], \@prereqs, [$self->{CONF}{S_BOOTSTRAP_PANO_PTO}, $pto, @prereqs ]);
+			$mode //= 'STACK';
+			if ($mode eq 'PANO') {
+				$self->{make}->add_rule([$pto], \@prereqs, [$self->{CONF}{S_BOOTSTRAP_PANO_PTO}, $pto, @prereqs ]);
+			}
+			elsif ($mode eq 'STACK') {
+				$self->{make}->add_rule([$pto], \@prereqs, [$self->{CONF}{S_BOOTSTRAP_STACK_PTO}, $pto, @prereqs ]);
+			}
+			else {
+				die "unknown mode $mode";
+			}
+			
 			push @{$self->{def_targets}}, $pto;
 		}
 	}
@@ -441,7 +451,7 @@ sub parse_rmk
 				print STDERR "Can't parse $file\n";
 			}
 		}
-		if ($cmd[0] eq 'PANO') {
+		if ($cmd[0] eq 'PANO' || $cmd[0] eq 'STACK') {
 		
 			my @bases = $self->guess_img_seq($base);
 			if (@cmd > 1) {
@@ -449,10 +459,10 @@ sub parse_rmk
 				foreach my $base (@bases) {
 					$base =~ s/\..*$//;
 				}
-				$self->add_pano($base, \@bases);
+				$self->add_pano($base, \@bases, $cmd[0]);
 			}
 			elsif (@cmd == 1 && @bases > 0) {
-				$self->add_pano($base, \@bases);
+				$self->add_pano($base, \@bases, $cmd[0]);
 			}
 			else {
 				print STDERR "Can't parse $file\n";
