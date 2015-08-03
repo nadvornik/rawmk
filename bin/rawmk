@@ -415,6 +415,33 @@ sub add_pano_dir
 	}
 }
 
+sub add_flatfield
+{
+	my ($self, $mode, $name, $base) = @_;
+	$self->{$mode} //= {};
+	$self->{$mode}{$name} //= [];
+	foreach my $suffix (@{$self->{CONF}{EXT_RAW}}) {
+		if ($self->{files}{$base . $suffix}) {
+			push @{$self->{$mode}{$name}}, $base . $suffix;
+			$self->{files}{$base . $suffix}{NO_DEF_PROC} = 1;
+		}
+	}
+}
+
+sub add_flatfield_rules
+{
+	my ($self) = @_;
+	for my $mode ('DARKFRAME', 'FLATFIELD') {
+		if ($self->{$mode}) {
+			my $prog = ($mode eq 'DARKFRAME') ? 'proc_darkframe' : 'proc_flatfield';
+			for my $name (keys %{$self->{$mode}}) {
+				$self->{make}->add_rule(["$name.tif", "$name.dng"], $self->{$mode}{$name}, [$prog, $name, @{$self->{$mode}{$name}} ]);
+				print "$mode $name " . join(' ',  @{$self->{$mode}{$name}}) . "\n";
+			}
+		}
+	}
+}
+
 sub parse_rmk
 {
 	my ($self, $base, $file) = @_;
@@ -451,7 +478,7 @@ sub parse_rmk
 				print STDERR "Can't parse $file\n";
 			}
 		}
-		if ($cmd[0] eq 'PANO' || $cmd[0] eq 'STACK') {
+		elsif ($cmd[0] eq 'PANO' || $cmd[0] eq 'STACK') {
 		
 			my @bases = $self->guess_img_seq($base);
 			if (@cmd > 1) {
@@ -463,6 +490,21 @@ sub parse_rmk
 			}
 			elsif (@cmd == 1 && @bases > 0) {
 				$self->add_pano($base, \@bases, $cmd[0]);
+			}
+			else {
+				print STDERR "Can't parse $file\n";
+			}
+		}
+		elsif ($cmd[0] =~ /(DARKFRAME|FLATFIELD)(\(.*\))?/) {
+		        my $mode = $1;
+		        my $name = $2;
+		        $name =~ s/\((.*)\)/$1/;
+			if (@cmd == 2) {
+				$cmd[1] =~ s/\..*$//;
+				$self->add_flatfield($mode, $name, $cmd[1]);
+			}
+			elsif (@cmd == 1) {
+				$self->add_flatfield($mode, $name, $base);
 			}
 			else {
 				print STDERR "Can't parse $file\n";
@@ -734,6 +776,8 @@ sub process
 	$self->add_includes;
 
 	$self->proc_rmk();
+	
+	$self->add_flatfield_rules();
 	
 	$self->proc_tif_pp3();
 
