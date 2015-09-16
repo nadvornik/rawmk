@@ -9,7 +9,7 @@ sub new {
     my $self = bless {
         targets => $targets,
         sources => $sources,
-        cmd => \@_,
+        cmd => [@_],
         prio => 0,
     }, $class;
     return $self;
@@ -120,7 +120,7 @@ sub execute_cmd {
         else {
             my $proc_cmd = $cmd;
             $proc_cmd =~ s/\$\*/$match->{stem}/g;
-            print "$proc_cmd\n";
+            print "$self $proc_cmd\n";
             my $ret = 0;
             $ret = system($proc_cmd) unless $dry_run;
             return $ret if $ret;

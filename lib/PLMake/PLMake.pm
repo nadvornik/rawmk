@@ -58,6 +58,7 @@ sub apply_rules {
     
     chdir($self->{dir});
 print "apply rules\n";
+print Dumper($self->{rules});
     my $done;
     # apply all rules, get all possible targets
     my @todo = values %{$self->{targets}};
@@ -267,7 +268,7 @@ sub remake_j1 {
 sub remake_parallel {
     my $self = shift;
     
-    my $max_jobs = 4;
+    my $max_jobs = $self->{jobs};
     my $num_slots = $max_jobs;
     my $pm = Parallel::ForkManager->new($max_jobs);
     my $error = 0;

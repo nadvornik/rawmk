@@ -435,8 +435,9 @@ sub add_flatfield_rules
 		if ($self->{$mode}) {
 			my $prog = ($mode eq 'DARKFRAME') ? 'proc_darkframe' : 'proc_flatfield';
 			for my $name (keys %{$self->{$mode}}) {
-				$self->{make}->add_rule(["$name.tif", "$name.dng"], $self->{$mode}{$name}, [$prog, $name, @{$self->{$mode}{$name}} ]);
+				$self->{make}->add_rule(["$mode/$name.tif", "$mode/$name.dng"], $self->{$mode}{$name}, [$prog, "$mode/$name", @{$self->{$mode}{$name}} ])->set_prio(1);
 				print "$mode $name " . join(' ',  @{$self->{$mode}{$name}}) . "\n";
+				push @{$self->{def_targets}}, "$mode/$name.tif", "$mode/$name.dng";
 			}
 		}
 	}
@@ -709,6 +710,7 @@ sub proc_subdirs
 	my @rec;
 	
 	foreach my $file (reverse sort keys %{$self->{files}}) {
+		next if $file eq 'DARKFRAME' || $file eq 'FLATFIELD';
 		if (-d $self->{files}{$file}{PATH}) {
 			push @rec, [$0, 'make', '-C', "$file"];
 		}
@@ -746,7 +748,10 @@ sub add_includes
 			open FILE, $self->{files}{$file}{PATH} or die "Couldn't open file $self->{files}{$file}{PATH}: $!"; 
 			my $code = join("", <FILE>); 
 			close FILE;
-			eval $code;
+			my $result = eval $code;
+			unless($result) {
+				print STDERR $@;
+			}
 		}
 	}
 }
