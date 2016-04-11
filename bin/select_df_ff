@@ -14,8 +14,9 @@ $exiftool->Options(
 
 sub get_hash
 {
-    my ($exif) = @_;
+   	my ($exif, $prio) = @_;
     
+    $prio //= 0;
     my %h;
 
     my $date = $exif->{'DateTimeOriginal'};
@@ -27,32 +28,38 @@ sub get_hash
     }
     
     $h{'Date'} = $date;
+	$h{'prio'} = $prio;
     
     return \%h;
 }
 
 sub scan_dir
 {
-	my ($dir) = @_;
+	my (@dirs) = @_;
 	my @list;
-	my $wanted = sub
-	{
-		my $path = $File::Find::name;
-
-		next if -d $path;
-
-		my $exif = $exiftool->ImageInfo($path);
+	my $prio = 0;
 	
-		next unless $exif->{'Model'};
-		
-		my $h = get_hash($exif);
-		
-		$h->{'path'} = $path;
-		
-		push @list, $h;
-	};
+	for my $dir (@dirs) {
+		my $wanted = sub
+		{
+			my $path = $File::Find::name;
 
-	find($wanted, abs_path($dir));
+			next if -d $path;
+
+			my $exif = $exiftool->ImageInfo($path);
+	
+			next unless $exif->{'Model'};
+		
+			my $h = get_hash($exif);
+		
+			$h->{'path'} = $path;
+		
+			push @list, $h;
+		};
+
+		find($wanted, abs_path($dir));
+		$prio--;
+	}
 	
 	return \@list
 }
@@ -110,8 +117,11 @@ sub find_close
 }
 
 if ($ARGV[0] eq 'scan') {
-    my $list = scan_dir($ARGV[1]);
-    dd $list;
+    my $outfile = $ARGV[1];
+    my $list = scan_dir(@ARGV[2..$#ARGV]);
+    open(my $fh, ">", $outfile) or die "cannot open > $outfile: $!";
+    print $fh dump($list);
+    close($fh);
 }
 elsif ($ARGV[0] eq 'flatfield') {
     my $list = do $ARGV[1];
@@ -121,7 +131,7 @@ elsif ($ARGV[0] eq 'flatfield') {
     my $exif = $exiftool->ImageInfo($ARGV[2]);
     my $h = get_hash($exif);
 
-    my $c = find_close($list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName', 'Lens'], ['FocalLength', 'FNumber' ], ['Date']);
+    my $c = find_close($list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName', 'Lens'], ['FocalLength', 'FNumber' ], ['prio', 'Date']);
     
     if ($c->{path}) {
         print $c->{path}, "\n";
@@ -140,8 +150,7 @@ elsif ($ARGV[0] eq 'darkframe') {
     }
     my $exif = $exiftool->ImageInfo($ARGV[2]);
     my $h = get_hash($exif);
-
-    my $c = find_close($list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName'], ['ISO', 'ExposureTime' ], ['Date']);
+    my $c = find_close($list, $h, ['Model', 'Make', 'SerialNumber', 'OwnerName'], ['ISO', 'ExposureTime' ], ['prio', 'Date']);
     
     if ($c->{path}) {
         print $c->{path}, "\n";
@@ -186,7 +195,7 @@ elsif ($ARGV[0] eq 'pp3') {
             if ($df->{path}) {
 #                print STDERR "DarkFrame: $df->{path}\n";
                 $line =~ s|^DarkFrame=.*|DarkFrame=$df->{path}| ;
-                $line =~ s|^DarkFrameAutoSelect=.*|DarkFrameAutoSelect=false| ;
+                $line =~ s|^DarkFrameAuto=.*|DarkFrameAuto=false| ;
             }
             print $fh $line;
         }

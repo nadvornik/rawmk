@@ -33,6 +33,31 @@ sub find_config
 	return  File::Spec->catdir(@path);
 }
 
+sub find_hierarchy
+{
+	my ($self) = @_;
+	my @res;
+	my @path = File::Spec->splitdir($self->{BASEDIR});
+	
+	while (@path) {
+		push @res, File::Spec->catdir(@path);
+		last if File::Spec->catdir(@path) eq $self->{TOPDIR};
+		pop @path;
+	}
+	return  @res;
+}
+
+sub find_existing_hierarchy
+{
+	my ($self, $name) = @_;
+	my @res;
+	for my $dir ($self->find_hierarchy) {
+		my $file = File::Spec->catfile($dir, $name);
+		push @res, $file if -e $file;
+	}
+	return @res;
+}
+
 sub initialize
 {
 	my ($self, $dir) = @_;
@@ -48,10 +73,12 @@ sub initialize
 
 	$self->read_config(File::Spec->catfile($self->{CONFDIR}, "defaults.ini"));
 
-	opendir my $dh, $self->{BASEDIR} or die $!;
-	while( my $file = readdir($dh) ) {
-		next unless $file =~ /\.ini$/;
-		$self->read_config(File::Spec->catfile($self->{BASEDIR}, $file));
+	for my $dir ($self->find_hierarchy) {
+		opendir my $dh, $dir or die $!;
+		while( my $file = readdir($dh) ) {
+			next unless $file =~ /\.ini$/;
+			$self->read_config(File::Spec->catfile($dir, $file));
+		}
 	}
 #	print STDERR Dumper($self);
 }
@@ -59,7 +86,7 @@ sub initialize
 sub read_config
 {
 	my ($self, $conf_file) = @_;
-	my $conf = Config::IniFiles->new( -file => $conf_file ) or die "error parsing config file";
+	my $conf = Config::IniFiles->new( -file => $conf_file ) or die "error parsing config file '$conf_file'";
 	for my $p (qw(COLLECTION DOWNLOAD DOWNLOAD_R DOWNLOAD_L)) {
 		next unless $conf->val( 'PATHS', $p );
 		$self->{$p} = File::Spec->catfile($self->{TOPDIR}, $conf->val( 'PATHS', $p ));
@@ -431,16 +458,41 @@ sub add_flatfield
 sub add_flatfield_rules
 {
 	my ($self) = @_;
+	my %flist;
+	$flist{DARKFRAME} = [];
+	$flist{DARKFRAME_L} = [];
+	
+	$flist{FLATFIELD} = [];
+	$flist{FLATFIELD_L} = [];
+
 	for my $mode ('DARKFRAME', 'FLATFIELD') {
 		if ($self->{$mode}) {
 			my $prog = ($mode eq 'DARKFRAME') ? 'proc_darkframe' : 'proc_flatfield';
+			my $destdir = $mode;
 			for my $name (keys %{$self->{$mode}}) {
-				$self->{make}->add_rule(["$mode/$name.tif", "$mode/$name.dng"], $self->{$mode}{$name}, [$prog, "$mode/$name", @{$self->{$mode}{$name}} ])->set_prio(1);
-				print "$mode $name " . join(' ',  @{$self->{$mode}{$name}}) . "\n";
-				push @{$self->{def_targets}}, "$mode/$name.tif", "$mode/$name.dng";
+				$destdir .= "_L" if $name =~ /_l$/;
+				system("mkdir", $destdir);
+				my @df_arg;
+				if ($mode eq 'FLATFIELD') {
+					if ($name =~ /_l$/) {
+						@df_arg = ('darkframe_l');
+					}
+					else {
+						@df_arg = ('darkframe');
+					}
+				}
+				$self->{make}->add_rule(["$destdir/$name.tif", "$destdir/$name.dng"], [@{$self->{$mode}{$name}}, @df_arg], [$prog, "$destdir/$name", @df_arg, @{$self->{$mode}{$name}} ])->set_prio(1);
+				print "$destdir $name " . join(' ',  @{$self->{$mode}{$name}}) . "\n";
+				push @{$self->{def_targets}}, "$destdir/$name.tif", "$destdir/$name.dng";
+				push @{$flist{$destdir}}, "$destdir/$name.dng";
 			}
 		}
 	}
+	
+	$self->{make}->add_rule(["flatfield"], [$self->{CONF}->find_existing_hierarchy("FLATFIELD"), @{$flist{FLATFIELD}}], ['select_df_ff', 'scan', 'flatfield', $self->{CONF}->find_existing_hierarchy("FLATFIELD")]);
+	$self->{make}->add_rule(["flatfield_l"], [$self->{CONF}->find_existing_hierarchy("FLATFIELD_L"), @{$flist{FLATFIELD_L}}], ['select_df_ff', 'scan', 'flatfield_l', $self->{CONF}->find_existing_hierarchy("FLATFIELD_L")]);
+	$self->{make}->add_rule(["darkframe"], [$self->{CONF}->find_existing_hierarchy("DARKFRAME"), @{$flist{DARKFRAME}}], ['select_df_ff', 'scan', 'darkframe', $self->{CONF}->find_existing_hierarchy("DARKFRAME")]);
+	$self->{make}->add_rule(["darkframe_l"], [$self->{CONF}->find_existing_hierarchy("DARKFRAME_L"), @{$flist{DARKFRAME_L}}], ['select_df_ff', 'scan', 'darkframe_l', $self->{CONF}->find_existing_hierarchy("DARKFRAME_L")]);
 }
 
 sub parse_rmk
@@ -566,11 +618,11 @@ sub proc_raw_lr
 			my $r_raw_pp3 = "$r_file.pp3";
 			my $l_raw_pp3 = "$l_file.pp3";
 			if (! $self->{files}{$r_raw_pp3}) {
-				$self->{make}->add_rule([$r_raw_pp3], [$r_file], [$self->{CONF}{S_BOOTSTRAP_PP3}, $r_file, $r_raw_pp3]);
+				$self->{make}->add_rule([$r_raw_pp3], [$r_file, 'darkframe', 'flatfield'], [$self->{CONF}{S_BOOTSTRAP_PP3}, $r_file, $r_raw_pp3]);
 			}
 			
 			# generate left proc file from the right one
-			$self->{make}->add_rule([$l_raw_pp3], [$r_raw_pp3, $l_file, $r_file], [$self->{CONF}{S_SYNC_STEREO_PP3}, $r_raw_pp3, $l_raw_pp3, $l_file, $r_file]);
+			$self->{make}->add_rule([$l_raw_pp3], [$r_raw_pp3, $l_file, $r_file, 'darkframe_l', 'flatfield_l'], [$self->{CONF}{S_SYNC_STEREO_PP3}, $r_raw_pp3, $l_raw_pp3, $l_file, $r_file]);
 			
 			# rule for 16bit tif added in add_default_raw_patterns
 
@@ -600,7 +652,7 @@ sub proc_raw
 			# add default raw processor config (rawtherapee pp3 file) if missing
 			my $raw_pp3 = "$file.pp3";
 			if (! $self->{files}{$raw_pp3}) {
-				$self->{make}->add_rule([$raw_pp3], [$file], [$self->{CONF}{S_BOOTSTRAP_PP3}, $file, $raw_pp3]);
+				$self->{make}->add_rule([$raw_pp3], [$file, 'darkframe', 'flatfield'], [$self->{CONF}{S_BOOTSTRAP_PP3}, $file, $raw_pp3]);
 			}
 			
 			#rules for tif and jpg are added in add_default_raw_patterns
@@ -847,12 +899,14 @@ package RAWMK::Add;
 use strict;
 use File::Basename;
 use Data::Dumper;
+use Image::ExifTool qw(:Public);
 
 sub new 
 {
 	my $class = shift;
 	my $self = shift;
 	bless $self, $class;
+	$self->{exiftool} = new Image::ExifTool;
 	return $self;
 }
 
@@ -979,6 +1033,72 @@ sub write_sbs_rmk
 		close($fh);
 	}
 }
+
+sub write_flatfield_rmk
+{
+	my ($self) = @_;
+	foreach my $file (@{$self->{files}}) {
+		my $rmk = $self->{directory} . '/' .  $file->{FILENAME} . ".rmk";
+
+		if (-f $rmk) {
+			print STDERR "file $rmk already exists\n";
+			next;
+		}
+
+		open(my $fh, '>', $rmk);
+		
+		my $fn = $self->{directory} . '/' .  $file->{FILENAME} . $file->{SUFFIX};
+		my $exif = $self->{exiftool}->ImageInfo($fn, {
+		                                List => 1, 
+		                                DateFormat => '%s', 
+		                                StrictDate => 1});
+	
+		my $iso = $exif->{'ISO'};
+		my $focal = $exif->{'FocalLength'};
+		my $fnum = $exif->{'FNumber'};
+		my $name = "ff-${focal}-${fnum}-${iso}";
+		$name =~ s/\s//g;
+		$name =~ s/\./_/g;
+		
+
+		print $fh "FLATFIELD($name)\n";
+
+		close($fh);
+	}
+}
+sub write_darkframe_rmk
+{
+	my ($self) = @_;
+	foreach my $file (@{$self->{files}}) {
+		my $rmk = $self->{directory} . '/' .  $file->{FILENAME} . ".rmk";
+
+		if (-f $rmk) {
+			print STDERR "file $rmk already exists\n";
+			next;
+		}
+
+		open(my $fh, '>', $rmk);
+		
+		my $fn = $self->{directory} . '/' .  $file->{FILENAME} . $file->{SUFFIX};
+		my $exif = $self->{exiftool}->ImageInfo($fn, {
+		                                List => 1, 
+		                                DateFormat => '%s', 
+		                                StrictDate => 1});
+	
+		my $iso = $exif->{'ISO'};
+		my $time = $exif->{'ExposureTime'};
+		my $name = "df-${iso}-${time}";
+		$name =~ s/\s//g;
+		$name =~ s/\./_/g;
+		$name =~ s/\//_/g;
+		
+
+		print $fh "DARKFRAME($name)\n";
+
+		close($fh);
+	}
+}
+
 
 sub write_pano_rmk
 {
@@ -1525,6 +1645,26 @@ elsif ($ARGV[0] eq 'sort') {
 	my $sort = RAWMK::Sort->new(\%opt);
 
 	$sort->process();
+}
+elsif ($ARGV[0] eq 'add_darkframe') {
+	shift @ARGV;
+	
+	my %opt;
+	
+	my $add = RAWMK::Add->new(\%opt);
+	
+	$add->inputs(@ARGV);
+	$add->write_darkframe_rmk()
+}
+elsif ($ARGV[0] eq 'add_flatfield') {
+	shift @ARGV;
+	
+	my %opt;
+	
+	my $add = RAWMK::Add->new(\%opt);
+	
+	$add->inputs(@ARGV);
+	$add->write_flatfield_rmk()
 }
 
 exit 0;

@@ -77,10 +77,8 @@ close $outfile;
 close $infile;
 
 if ($flatfield) {
-    my $CONF=`rawmk get_conf CONFDIR`;
-    chomp $CONF;
-    print STDERR "select_df_ff pp3 $CONF/darkframe_l $CONF/flatfield_l $ARGV[2] $ARGV[1]\n";
-    system('select_df_ff',  'pp3', "$CONF/darkframe_l", "$CONF/flatfield_l", $ARGV[2], $ARGV[1]);
+    print STDERR "select_df_ff pp3 darkframe_l flatfield_l $ARGV[2] $ARGV[1]\n";
+    system('select_df_ff',  'pp3', "darkframe_l", "flatfield_l", $ARGV[2], $ARGV[1]);
 }
 
 #use Data::Dumper;
